@@ -1,0 +1,21 @@
+[Unit]
+Description=WeatherWatch web application
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=weatherwatch
+Group=weatherwatch
+WorkingDirectory=/opt/weatherwatch
+EnvironmentFile=/etc/weatherwatch.env
+ExecStart=/opt/weatherwatch/.venv/bin/gunicorn --workers 2 --threads 4 --bind 127.0.0.1:8000 --access-logfile - --error-logfile - app:app
+Restart=on-failure
+RestartSec=5
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/weatherwatch
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
