@@ -29,33 +29,29 @@ The highest category triggered by today's forecast precipitation or maximum wind
 
 The image did not specify numeric thresholds for WeatherWatch, so 1 mm rain / 40 kph gust was selected as the watch floor.
 
-## Ubuntu deployment
+## One-command Ubuntu installation
+
+On Ubuntu 22.04 or 24.04, clone the repository and run the included installer:
 
 ```bash
-sudo apt update && sudo apt install -y python3-venv nginx git
-sudo useradd --system --home /opt/weatherwatch --shell /usr/sbin/nologin weatherwatch
-sudo git clone https://github.com/YOUR_ACCOUNT/WeatherWatch.git /opt/weatherwatch
-sudo python3 -m venv /opt/weatherwatch/.venv
-sudo /opt/weatherwatch/.venv/bin/pip install -r /opt/weatherwatch/requirements.txt
-sudo install -d -o weatherwatch -g weatherwatch /var/lib/weatherwatch
-sudo chown -R weatherwatch:weatherwatch /opt/weatherwatch
-SECRET=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
-sudo tee /etc/weatherwatch.env >/dev/null <<EOF
-SECRET_KEY=$SECRET
-COOKIE_SECURE=1
-ENABLE_WEB_UPDATES=0
-WEATHERWATCH_DATA_DIR=/var/lib/weatherwatch
-EOF
-sudo chmod 600 /etc/weatherwatch.env
-sudo cp /opt/weatherwatch/deploy/weatherwatch.service /etc/systemd/system/
-sudo cp /opt/weatherwatch/deploy/nginx.conf /etc/nginx/sites-available/weatherwatch
-sudo ln -s /etc/nginx/sites-available/weatherwatch /etc/nginx/sites-enabled/weatherwatch
-# Edit server_name in /etc/nginx/sites-available/weatherwatch, then:
-sudo nginx -t && sudo systemctl reload nginx
-sudo systemctl daemon-reload && sudo systemctl enable --now weatherwatch
+git clone https://github.com/mikeehendricks/WeatherWatch.git
+cd WeatherWatch
+sudo bash install.sh
 ```
 
-Add HTTPS with Certbot before using the admin portal. Visit `/admin` once to create the sole administrator. Registration is unavailable afterward.
+For a domain, automatic HTTPS, and the optional admin web updater:
+
+```bash
+sudo bash install.sh \
+  --domain weather.example.com \
+  --email admin@example.com \
+  --https \
+  --enable-web-updates
+```
+
+Point the domain's DNS record to the server before using `--https`. The script installs all packages, creates a restricted service account, configures the Python environment, systemd and nginx, generates the application secret, starts the services, and runs a health check. It is safe to rerun for configuration repair or an update.
+
+Visit `/admin` once to create the sole administrator. Registration is unavailable afterward. HTTPS is strongly recommended before using the admin portal.
 
 ## Web updater
 
