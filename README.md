@@ -9,6 +9,7 @@ A responsive operations dashboard for current conditions and multi-provider fore
 - Safety-first consensus uses the higher rain/wind risk and averages temperatures
 - Five-day forecast for every monitored site
 - 11 preloaded locations from the supplied list
+- Branded favicon and Apple touch icon
 - Automatic refresh every five minutes and visible application version
 - Unlinked `/admin` portal
 - One-time administrator registration (closes after the first account)
