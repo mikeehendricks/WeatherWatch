@@ -35,6 +35,11 @@ done
 [[ -r /etc/os-release ]] || die "This installer requires Ubuntu."
 . /etc/os-release
 [[ "${ID:-}" == "ubuntu" ]] || die "Unsupported OS: ${PRETTY_NAME:-unknown}. Ubuntu is required."
+case "${VERSION_CODENAME:-}" in
+  jammy|noble) ;;
+  plucky) die "Ubuntu 25.04 (Plucky) reached end of life and its archive packages are no longer served normally. Reinstall/upgrade this server to Ubuntu 24.04 LTS, then run this installer again." ;;
+  *) die "Unsupported Ubuntu release: ${PRETTY_NAME:-unknown}. Use Ubuntu 22.04 LTS or 24.04 LTS." ;;
+esac
 if [[ "$INSTALL_HTTPS" == "1" ]]; then
   [[ "$DOMAIN" != "_" ]] || die "--https requires --domain."
   [[ -n "$EMAIL" ]] || die "--https requires --email."
