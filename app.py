@@ -4,11 +4,15 @@ import os
 import secrets
 import sqlite3
 import subprocess
+import threading
+import time
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
+from zoneinfo import ZoneInfo
 import re
 
 from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
@@ -34,6 +38,14 @@ app.config.update(
     TRUSTED_HOSTS=([x.strip() for x in os.getenv("TRUSTED_HOSTS", "").split(",") if x.strip()] or None),
 )
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
+
+WEATHER_CACHE = {"expires": 0.0, "payload": None}
+WEATHER_CACHE_LOCK = threading.Lock()
+MANILA_TZ = ZoneInfo("Asia/Manila")
+MET_USER_AGENT = os.getenv(
+    "MET_NORWAY_USER_AGENT",
+    "WeatherWatch/1.3 (+https://github.com/mikeehendricks/WeatherWatch)",
+)
 
 SEED_LOCATIONS = [
     ("Malabon Admin", "123 Gov. Pascual Ave, Malabon City", 14.669781379303119, 120.97125462121843, "MX9C+WF Malabon, Metro Manila"),
@@ -139,12 +151,89 @@ def index():
     return render_template("index.html", locations=locations)
 
 
+def met_symbol_to_code(symbol):
+    symbol = (symbol or "").lower()
+    if "thunder" in symbol: return 95
+    if "heavyrain" in symbol: return 65
+    if "rainshowers" in symbol: return 80
+    if "rain" in symbol or "sleet" in symbol: return 61
+    if "snow" in symbol: return 71
+    if "fog" in symbol: return 45
+    if "cloudy" in symbol: return 3
+    if "partlycloudy" in symbol: return 2
+    return 0
+
+
+def fetch_met_forecast(location):
+    query = urllib.parse.urlencode({"lat": location["latitude"], "lon": location["longitude"]})
+    req = urllib.request.Request(
+        "https://api.met.no/weatherapi/locationforecast/2.0/compact?" + query,
+        headers={"User-Agent": MET_USER_AGENT, "Accept": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=12) as response:
+        payload = json.load(response)
+    series = payload.get("properties", {}).get("timeseries", [])
+    if not series:
+        raise ValueError("MET Norway returned no forecast")
+
+    now_details = series[0].get("data", {}).get("instant", {}).get("details", {})
+    days = {}
+    today = datetime.now(MANILA_TZ).date()
+    for item in series:
+        stamp = datetime.fromisoformat(item["time"].replace("Z", "+00:00")).astimezone(MANILA_TZ)
+        if stamp.date() < today or stamp.date() >= today + timedelta(days=5):
+            continue
+        data = item.get("data", {})
+        details = data.get("instant", {}).get("details", {})
+        next_hour = data.get("next_1_hours", {})
+        summary = next_hour.get("summary", {})
+        day = days.setdefault(stamp.date().isoformat(), {"temps": [], "rain": 0.0, "gust": 0.0, "codes": []})
+        if details.get("air_temperature") is not None:
+            day["temps"].append(float(details["air_temperature"]))
+        day["gust"] = max(day["gust"], float(details.get("wind_speed_of_gust", details.get("wind_speed", 0))) * 3.6)
+        day["rain"] += float(next_hour.get("details", {}).get("precipitation_amount", 0) or 0)
+        if summary.get("symbol_code"):
+            day["codes"].append(met_symbol_to_code(summary["symbol_code"]))
+
+    forecast = []
+    for date in sorted(days)[:5]:
+        day = days[date]
+        temps = day["temps"] or [0]
+        code = max(day["codes"] or [0])
+        forecast.append({
+            "date": date, "weather_code": code,
+            "temperature_max": max(temps), "temperature_min": min(temps),
+            "rain": round(day["rain"], 2), "gust": round(day["gust"], 1),
+        })
+    return {
+        "current": {
+            "temperature_2m": now_details.get("air_temperature"),
+            "apparent_temperature": now_details.get("air_temperature"),
+            "relative_humidity_2m": now_details.get("relative_humidity"),
+            "wind_speed_10m": float(now_details.get("wind_speed", 0)) * 3.6,
+            "wind_gusts_10m": float(now_details.get("wind_speed_of_gust", now_details.get("wind_speed", 0))) * 3.6,
+        },
+        "forecast": forecast,
+    }
+
+
+def mean_available(*values):
+    valid = [float(value) for value in values if value is not None]
+    return sum(valid) / len(valid) if valid else None
+
+
 @app.get("/api/weather")
 def weather():
+    now = time.monotonic()
+    with WEATHER_CACHE_LOCK:
+        if WEATHER_CACHE["payload"] is not None and WEATHER_CACHE["expires"] > now:
+            return jsonify(WEATHER_CACHE["payload"])
+
     with db() as conn:
         locations = [dict(r) for r in conn.execute("SELECT * FROM locations ORDER BY name")]
     if not locations:
         return jsonify({"locations": [], "updated_at": datetime.now(timezone.utc).isoformat()})
+
     params = urllib.parse.urlencode({
         "latitude": ",".join(str(x["latitude"]) for x in locations),
         "longitude": ",".join(str(x["longitude"]) for x in locations),
@@ -153,34 +242,79 @@ def weather():
         "forecast_days": 5, "timezone": "Asia/Manila", "wind_speed_unit": "kmh"
     })
     try:
-        req = urllib.request.Request("https://api.open-meteo.com/v1/forecast?" + params, headers={"User-Agent": "WeatherWatch/1.0"})
-        with urllib.request.urlopen(req, timeout=12) as response:
-            payload = json.load(response)
-        forecasts = payload if isinstance(payload, list) else [payload]
+        open_req = urllib.request.Request(
+            "https://api.open-meteo.com/v1/forecast?" + params,
+            headers={"User-Agent": f"WeatherWatch/{APP_VERSION}"},
+        )
+        with urllib.request.urlopen(open_req, timeout=12) as response:
+            open_payload = json.load(response)
+        open_forecasts = open_payload if isinstance(open_payload, list) else [open_payload]
+
+        met_forecasts = {}
+        # MET Norway requires one coordinate request per site. Run them concurrently,
+        # cache the consensus for five minutes, and tolerate individual failures.
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            futures = {pool.submit(fetch_met_forecast, loc): loc["id"] for loc in locations}
+            for future in as_completed(futures):
+                try:
+                    met_forecasts[futures[future]] = future.result()
+                except Exception as exc:
+                    app.logger.warning("MET Norway error for location %s: %s", futures[future], exc)
+
         result = []
-        for loc, forecast in zip(locations, forecasts):
-            current = forecast.get("current", {})
-            daily = forecast.get("daily", {})
-            rain = float((daily.get("precipitation_sum") or [0])[0] or 0)
-            gust = float((daily.get("wind_gusts_10m_max") or [0])[0] or 0)
-            severity = classify(rain, gust)
-            days = []
+        for loc, open_forecast in zip(locations, open_forecasts):
+            met = met_forecasts.get(loc["id"])
+            current = dict(open_forecast.get("current", {}))
+            if met:
+                met_current = met["current"]
+                current["temperature_2m"] = mean_available(current.get("temperature_2m"), met_current.get("temperature_2m"))
+                current["apparent_temperature"] = mean_available(current.get("apparent_temperature"), met_current.get("apparent_temperature"))
+                current["relative_humidity_2m"] = mean_available(current.get("relative_humidity_2m"), met_current.get("relative_humidity_2m"))
+                current["wind_speed_10m"] = max(float(current.get("wind_speed_10m", 0) or 0), float(met_current.get("wind_speed_10m", 0) or 0))
+                current["wind_gusts_10m"] = max(float(current.get("wind_gusts_10m", 0) or 0), float(met_current.get("wind_gusts_10m", 0) or 0))
+
+            daily = open_forecast.get("daily", {})
+            open_days = []
             for i, date in enumerate(daily.get("time", [])[:5]):
-                day_rain = float((daily.get("precipitation_sum") or [0] * 5)[i] or 0)
-                day_gust = float((daily.get("wind_gusts_10m_max") or [0] * 5)[i] or 0)
-                days.append({
+                open_days.append({
                     "date": date,
                     "weather_code": (daily.get("weather_code") or [0] * 5)[i],
                     "temperature_max": (daily.get("temperature_2m_max") or [None] * 5)[i],
                     "temperature_min": (daily.get("temperature_2m_min") or [None] * 5)[i],
-                    "rain": day_rain,
-                    "gust": day_gust,
-                    "severity": classify(day_rain, day_gust),
+                    "rain": float((daily.get("precipitation_sum") or [0] * 5)[i] or 0),
+                    "gust": float((daily.get("wind_gusts_10m_max") or [0] * 5)[i] or 0),
                 })
-            result.append({**loc, "current": current, "rain": rain, "gust": gust, "severity": severity, "forecast": days})
-        return jsonify({"locations": result, "updated_at": datetime.now(timezone.utc).isoformat()})
+            met_by_date = {day["date"]: day for day in (met or {}).get("forecast", [])}
+            days = []
+            for open_day in open_days:
+                met_day = met_by_date.get(open_day["date"])
+                if met_day:
+                    # Safety-first consensus: use the higher hazardous value and
+                    # mean temperatures. This avoids understating rain or wind risk.
+                    open_day["rain"] = max(open_day["rain"], met_day["rain"])
+                    open_day["gust"] = max(open_day["gust"], met_day["gust"])
+                    open_day["temperature_max"] = mean_available(open_day["temperature_max"], met_day["temperature_max"])
+                    open_day["temperature_min"] = mean_available(open_day["temperature_min"], met_day["temperature_min"])
+                open_day["severity"] = classify(open_day["rain"], open_day["gust"])
+                days.append(open_day)
+
+            first = days[0] if days else {"rain": 0, "gust": 0, "severity": "normal"}
+            result.append({
+                **loc, "current": current, "rain": first["rain"], "gust": first["gust"],
+                "severity": first["severity"], "forecast": days,
+                "source": "Open-Meteo + MET Norway" if met else "Open-Meteo",
+                "selection": "Safety-first consensus" if met else "Provider fallback",
+            })
+        payload = {"locations": result, "updated_at": datetime.now(timezone.utc).isoformat(), "method": "Safety-first multi-provider consensus"}
+        with WEATHER_CACHE_LOCK:
+            WEATHER_CACHE.update(payload=payload, expires=time.monotonic() + 300)
+        return jsonify(payload)
     except Exception as exc:
         app.logger.warning("Weather provider error: %s", exc)
+        with WEATHER_CACHE_LOCK:
+            stale = WEATHER_CACHE["payload"]
+        if stale is not None:
+            return jsonify({**stale, "stale": True})
         return jsonify({"error": "Weather data is temporarily unavailable."}), 503
 
 

@@ -113,6 +113,7 @@ COOKIE_SECURE=$([[ "$INSTALL_HTTPS" == "1" ]] && echo 1 || echo 0)
 ENABLE_WEB_UPDATES=$ENABLE_UPDATES
 WEATHERWATCH_DATA_DIR=$DATA_DIR
 TRUSTED_HOSTS=$TRUSTED_HOSTS
+MET_NORWAY_USER_AGENT=WeatherWatch/1.3 (+https://github.com/mikeehendricks/WeatherWatch)
 EOF
 chown root:weatherwatch "$ENV_FILE"
 chmod 0640 "$ENV_FILE"

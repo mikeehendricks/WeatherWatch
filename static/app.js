@@ -32,6 +32,7 @@ async function load() {
           <div><small>Max gust</small><b>${Math.round(number(location.gust))} <em>kph</em></b><em>Today's forecast</em></div>
         </div>
         ${forecastHtml(location.forecast)}
+        <div class="source-line"><b>Source:</b> ${esc(location.source)} <span>• ${esc(location.selection)}</span></div>
         <div class="card-foot"><span>${number(location.latitude).toFixed(4)}, ${number(location.longitude).toFixed(4)}</span><span>${esc(location.plus_code)}</span></div>
       </article>`).join('');
     document.querySelector('#updated').textContent = `Updated ${new Date(data.updated_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`;

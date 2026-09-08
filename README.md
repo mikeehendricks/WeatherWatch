@@ -5,6 +5,8 @@ A responsive operations dashboard for current conditions and today's rain/wind f
 ## Features
 
 - Live dashboard with five-level severity color matrix
+- Multi-provider data from Open-Meteo and MET Norway
+- Safety-first consensus uses the higher rain/wind risk and averages temperatures
 - Five-day forecast for every monitored site
 - 11 preloaded locations from the supplied list
 - Automatic refresh every five minutes and visible application version
@@ -29,6 +31,10 @@ The highest category triggered by today's forecast precipitation or maximum wind
 | Extreme | Rain >100 mm or gust >130 kph |
 
 The image did not specify numeric thresholds for WeatherWatch, so 1 mm rain / 40 kph gust was selected as the watch floor.
+
+## Weather-source selection
+
+WeatherWatch retrieves coordinate-level forecasts from both Open-Meteo and the MET Norway Locationforecast API. Because neither provider supplies independent ground-truth observations at every facility, the application does not make an unsupported claim that one is universally more accurate. It uses a safety-first consensus instead: the higher rainfall and wind-gust forecast controls operational severity, while available temperatures are averaged. If MET Norway is unavailable, Open-Meteo remains available automatically. Results are cached for five minutes to respect provider capacity and stale data is retained during short upstream interruptions. Each site card identifies the active source and method.
 
 ## One-command Ubuntu installation
 
