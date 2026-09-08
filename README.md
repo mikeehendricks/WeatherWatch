@@ -1,6 +1,6 @@
 # WeatherWatch
 
-A responsive operations dashboard for current conditions and today's rain/wind forecast at configured Philippine sites. Weather comes from [Open-Meteo](https://open-meteo.com/) and requires no API key.
+A responsive operations dashboard for current conditions and multi-provider forecasts at configured Philippine sites. Its interface follows Apple Human Interface Guidelines principles: clear hierarchy, content-first layouts, familiar controls, comfortable touch targets, accessible contrast, reduced-motion support, and automatic light/dark appearance.
 
 ## Features
 
