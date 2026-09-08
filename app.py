@@ -2,6 +2,7 @@ import hmac
 import json
 import os
 import secrets
+import signal
 import sqlite3
 import subprocess
 import threading
@@ -460,13 +461,20 @@ def system_update():
             # Install pinned dependencies before gracefully reloading Gunicorn. ExecReload
             # lets this request finish while replacement workers start with the new code.
             run([str(BASE_DIR / ".venv" / "bin" / "pip"), "install", "--requirement", str(BASE_DIR / "requirements.txt")], 180)
-            run(["sudo", "-n", "/bin/systemctl", "reload", "weatherwatch.service"], 15)
-            flash(f"Updated {before} → {after}. WeatherWatch is restarting automatically; refresh in a few seconds.", "success")
+            # Gunicorn's master and workers run under the same restricted account,
+            # so a worker may safely request a graceful reload without sudo/root.
+            # HUP lets this request finish before the old worker exits.
+            parent_pid = os.getppid()
+            parent_cmdline = Path(f"/proc/{parent_pid}/cmdline").read_bytes().replace(b"\0", b" ").decode("utf-8", "replace")
+            if "gunicorn" not in parent_cmdline:
+                raise RuntimeError("automatic reload is available only under Gunicorn")
+            os.kill(parent_pid, signal.SIGHUP)
+            flash(f"Updated {before} → {after}. WeatherWatch is reloading automatically; refresh in a few seconds.", "success")
     except subprocess.CalledProcessError as exc:
         detail = (exc.stderr or exc.stdout or "unknown command error").strip().splitlines()[-1][:240]
         app.logger.error("Update command failed (%s): %s", exc.cmd, detail)
         flash(f"Update failed: {detail}", "error")
-    except (subprocess.SubprocessError, OSError) as exc:
+    except (subprocess.SubprocessError, OSError, RuntimeError) as exc:
         app.logger.error("Update failed: %s", exc)
         flash("Update failed. Check the WeatherWatch service log for details.", "error")
     return redirect(url_for("admin_dashboard"))

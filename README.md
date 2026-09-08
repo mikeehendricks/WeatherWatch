@@ -69,7 +69,7 @@ The updater checks for a clean working tree, fetches `origin/main`, performs a *
 3. Run `sudo systemctl restart weatherwatch`.
 4. Use **Check for code update** in the admin portal. Dependencies are installed and the service is gracefully reloaded automatically.
 
-The installer grants the service account permission to perform only `systemctl reload weatherwatch.service`; it cannot start, stop, or control other services. Major operating-system or database migration changes should still be applied over SSH.
+After updating, the worker sends a same-user `SIGHUP` to its Gunicorn master for a graceful reload. No `sudo`, root permission, or service-control permission is granted to the application. Major operating-system or database migration changes should still be applied over SSH.
 
 Do **not** place GitHub tokens in the repository or `.env` committed to Git.
 

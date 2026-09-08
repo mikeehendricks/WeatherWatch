@@ -48,7 +48,7 @@ fi
 export DEBIAN_FRONTEND=noninteractive
 log "Installing operating-system packages"
 apt-get update
-apt-get install -y python3 python3-venv python3-pip git nginx ca-certificates curl sudo
+apt-get install -y python3 python3-venv python3-pip git nginx ca-certificates curl
 if [[ "$INSTALL_HTTPS" == "1" ]]; then apt-get install -y certbot python3-certbot-nginx; fi
 
 log "Creating the service account and directories"
@@ -143,16 +143,9 @@ NoNewPrivileges=true
 [Install]
 WantedBy=multi-user.target
 EOF
-if [[ "$ENABLE_UPDATES" == "1" ]]; then
-  # Permit only a graceful reload of this service—never arbitrary root commands.
-  cat >"/etc/sudoers.d/weatherwatch-reload" <<'EOF'
-weatherwatch ALL=(root) NOPASSWD: /bin/systemctl reload weatherwatch.service
-EOF
-  chmod 0440 /etc/sudoers.d/weatherwatch-reload
-  visudo -cf /etc/sudoers.d/weatherwatch-reload >/dev/null
-else
-  rm -f /etc/sudoers.d/weatherwatch-reload
-fi
+# Remove the legacy reload rule, if present. Reloads now use a same-user
+# Gunicorn signal and remain compatible with NoNewPrivileges=true.
+rm -f /etc/sudoers.d/weatherwatch-reload
 systemctl daemon-reload
 systemctl enable --now "$SERVICE"
 systemctl restart "$SERVICE"
