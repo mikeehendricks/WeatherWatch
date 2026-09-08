@@ -31,7 +31,7 @@ The image did not specify numeric thresholds for WeatherWatch, so 1 mm rain / 40
 
 ## One-command Ubuntu installation
 
-On Ubuntu 22.04 or 24.04, clone the repository and run the included installer:
+On Ubuntu 22.04, 24.04, or 26.04 LTS (including 26.04.1), clone the repository and run the included installer:
 
 ```bash
 git clone https://github.com/mikeehendricks/WeatherWatch.git

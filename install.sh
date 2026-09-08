@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# WeatherWatch one-command installer for Ubuntu 22.04/24.04.
+# WeatherWatch one-command installer for Ubuntu 22.04/24.04/26.04 LTS.
 # Usage: sudo bash install.sh [--domain weather.example.com] [--email you@example.com]
 #        [--repo https://github.com/ACCOUNT/WeatherWatch.git] [--enable-web-updates]
 set -Eeuo pipefail
@@ -36,9 +36,9 @@ done
 . /etc/os-release
 [[ "${ID:-}" == "ubuntu" ]] || die "Unsupported OS: ${PRETTY_NAME:-unknown}. Ubuntu is required."
 case "${VERSION_CODENAME:-}" in
-  jammy|noble) ;;
-  plucky) die "Ubuntu 25.04 (Plucky) reached end of life and its archive packages are no longer served normally. Reinstall/upgrade this server to Ubuntu 24.04 LTS, then run this installer again." ;;
-  *) die "Unsupported Ubuntu release: ${PRETTY_NAME:-unknown}. Use Ubuntu 22.04 LTS or 24.04 LTS." ;;
+  jammy|noble|resolute) ;;
+  plucky) die "Ubuntu 25.04 (Plucky) reached end of life and its archive packages are no longer served normally. Reinstall/upgrade this server to Ubuntu 24.04 or 26.04 LTS, then run this installer again." ;;
+  *) die "Unsupported Ubuntu release: ${PRETTY_NAME:-unknown}. Use Ubuntu 22.04, 24.04, or 26.04 LTS." ;;
 esac
 if [[ "$INSTALL_HTTPS" == "1" ]]; then
   [[ "$DOMAIN" != "_" ]] || die "--https requires --domain."
