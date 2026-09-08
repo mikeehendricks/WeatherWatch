@@ -56,13 +56,14 @@ Visit `/admin` once to create the sole administrator. Registration is unavailabl
 
 ## Web updater
 
-The updater runs `git fetch` and a **fast-forward-only** merge. Enable only after deployment is working:
+The updater checks for a clean working tree, fetches `origin/main`, performs a **fast-forward-only** merge, installs pinned Python dependencies, and gracefully reloads Gunicorn so the new version starts automatically. Enable only after deployment is working:
 
 1. Ensure the `weatherwatch` service user can read the repository and authenticate to a private remote (a read-only deploy key is preferred).
 2. Set `ENABLE_WEB_UPDATES=1` in `/etc/weatherwatch.env`.
 3. Run `sudo systemctl restart weatherwatch`.
-4. Use **Check for code update** in the admin portal.
-5. After a successful update, run `sudo systemctl restart weatherwatch` to load new Python code. Dependency or database migration changes should be applied over SSH.
+4. Use **Check for code update** in the admin portal. Dependencies are installed and the service is gracefully reloaded automatically.
+
+The installer grants the service account permission to perform only `systemctl reload weatherwatch.service`; it cannot start, stop, or control other services. Major operating-system or database migration changes should still be applied over SSH.
 
 Do **not** place GitHub tokens in the repository or `.env` committed to Git.
 

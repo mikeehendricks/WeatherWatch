@@ -306,14 +306,35 @@ def system_update():
         flash("Web updates are disabled. Set ENABLE_WEB_UPDATES=1 to enable them.", "error")
         return redirect(url_for("admin_dashboard"))
     try:
-        before = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=BASE_DIR, check=True, capture_output=True, text=True, timeout=10).stdout.strip()
-        subprocess.run(["git", "fetch", "--prune", "origin"], cwd=BASE_DIR, check=True, capture_output=True, text=True, timeout=60)
-        subprocess.run(["git", "merge", "--ff-only", "@{u}"], cwd=BASE_DIR, check=True, capture_output=True, text=True, timeout=60)
-        after = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=BASE_DIR, check=True, capture_output=True, text=True, timeout=10).stdout.strip()
-        flash("Already up to date." if before == after else f"Updated {before} → {after}. Restart the service to apply changes.", "success")
+        def run(command, timeout=60):
+            return subprocess.run(
+                command, cwd=BASE_DIR, check=True, capture_output=True,
+                text=True, timeout=timeout, env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+            )
+
+        # Refuse to overwrite local administrator changes or accept a history rewrite.
+        run(["git", "diff", "--quiet"])
+        run(["git", "diff", "--cached", "--quiet"])
+        before = run(["git", "rev-parse", "--short", "HEAD"], 10).stdout.strip()
+        run(["git", "fetch", "--prune", "origin"])
+        run(["git", "merge", "--ff-only", "origin/main"])
+        after = run(["git", "rev-parse", "--short", "HEAD"], 10).stdout.strip()
+
+        if before == after:
+            flash(f"Already up to date (version {APP_VERSION}).", "success")
+        else:
+            # Install pinned dependencies before gracefully reloading Gunicorn. ExecReload
+            # lets this request finish while replacement workers start with the new code.
+            run([str(BASE_DIR / ".venv" / "bin" / "pip"), "install", "--requirement", str(BASE_DIR / "requirements.txt")], 180)
+            run(["sudo", "-n", "/bin/systemctl", "reload", "weatherwatch.service"], 15)
+            flash(f"Updated {before} → {after}. WeatherWatch is restarting automatically; refresh in a few seconds.", "success")
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or "unknown command error").strip().splitlines()[-1][:240]
+        app.logger.error("Update command failed (%s): %s", exc.cmd, detail)
+        flash(f"Update failed: {detail}", "error")
     except (subprocess.SubprocessError, OSError) as exc:
         app.logger.error("Update failed: %s", exc)
-        flash("Update failed. Check server logs and repository permissions.", "error")
+        flash("Update failed. Check the WeatherWatch service log for details.", "error")
     return redirect(url_for("admin_dashboard"))
 
 

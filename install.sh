@@ -48,7 +48,7 @@ fi
 export DEBIAN_FRONTEND=noninteractive
 log "Installing operating-system packages"
 apt-get update
-apt-get install -y python3 python3-venv python3-pip git nginx ca-certificates curl
+apt-get install -y python3 python3-venv python3-pip git nginx ca-certificates curl sudo
 if [[ "$INSTALL_HTTPS" == "1" ]]; then apt-get install -y certbot python3-certbot-nginx; fi
 
 log "Creating the service account and directories"
@@ -130,6 +130,7 @@ Group=weatherwatch
 WorkingDirectory=$APP_DIR
 EnvironmentFile=$ENV_FILE
 ExecStart=$APP_DIR/.venv/bin/gunicorn --workers 2 --threads 4 --bind 127.0.0.1:8000 --access-logfile - --error-logfile - app:app
+ExecReload=/bin/kill -HUP \$MAINPID
 Restart=on-failure
 RestartSec=5
 PrivateTmp=true
@@ -141,6 +142,16 @@ NoNewPrivileges=true
 [Install]
 WantedBy=multi-user.target
 EOF
+if [[ "$ENABLE_UPDATES" == "1" ]]; then
+  # Permit only a graceful reload of this service—never arbitrary root commands.
+  cat >"/etc/sudoers.d/weatherwatch-reload" <<'EOF'
+weatherwatch ALL=(root) NOPASSWD: /bin/systemctl reload weatherwatch.service
+EOF
+  chmod 0440 /etc/sudoers.d/weatherwatch-reload
+  visudo -cf /etc/sudoers.d/weatherwatch-reload >/dev/null
+else
+  rm -f /etc/sudoers.d/weatherwatch-reload
+fi
 systemctl daemon-reload
 systemctl enable --now "$SERVICE"
 systemctl restart "$SERVICE"
