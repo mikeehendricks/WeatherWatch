@@ -14,6 +14,9 @@ The application was reviewed for OWASP-style web risks, deployment weaknesses, d
 - **Cross-site request defense in depth:** state-changing requests with an `Origin` header are rejected unless the origin matches the validated host, in addition to mandatory CSRF tokens.
 - **Browser isolation hardening:** CSP now restricts base URLs, forms, and plugins; COOP, CORP, and cross-domain-policy denial headers were added.
 - **Session-cookie hardening:** HTTPS deployments use a `__Host-` prefixed cookie, preventing Domain scoping and requiring a secure host-only cookie.
+- **Visitor-data protection:** IP/ISP data is admin-only, automatically expires after a bounded retention period, and is disclosed on the public footer.
+- **CSV injection prevention:** exported visitor fields that could be interpreted as spreadsheet formulas are neutralized.
+- **ISP lookup isolation:** lookups use validated IP literals, a fixed HTTPS provider host, strict timeouts, bounded response fields, and background execution.
 - **Server fingerprint reduction:** generated nginx configuration disables version tokens.
 - **Brute-force login attempts:** added persistent per-IP and per-username throttling, bounded inputs, cleanup, and constant-work password verification for unknown users.
 - **Stored script injection risk in admin confirmations:** removed inline JavaScript containing location data. Confirmations now use a same-origin static script and constant messages compatible with the strict CSP.

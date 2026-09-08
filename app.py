@@ -1,4 +1,7 @@
+import csv
 import hmac
+import io
+import ipaddress
 import json
 import os
 import secrets
@@ -16,7 +19,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 import re
 
-from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
+from flask import Flask, Response, flash, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -45,11 +48,17 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
 
 WEATHER_CACHE = {"expires": 0.0, "payload": None}
 WEATHER_CACHE_LOCK = threading.Lock()
+VISITOR_LOOKUPS = set()
+VISITOR_LOOKUPS_LOCK = threading.Lock()
 MANILA_TZ = ZoneInfo("Asia/Manila")
 MET_USER_AGENT = os.getenv(
     "MET_NORWAY_USER_AGENT",
     f"WeatherWatch/{APP_VERSION} (+https://github.com/mikeehendricks/WeatherWatch)",
 )
+try:
+    VISITOR_RETENTION_DAYS = max(1, min(int(os.getenv("VISITOR_RETENTION_DAYS", "30")), 365))
+except ValueError:
+    VISITOR_RETENTION_DAYS = 30
 
 SEED_LOCATIONS = [
     ("Malabon Admin", "123 Gov. Pascual Ave, Malabon City", 14.669781379303119, 120.97125462121843, "MX9C+WF Malabon, Metro Manila"),
@@ -91,6 +100,18 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS login_attempts_lookup
                 ON login_attempts(ip, username, attempted_at);
+            CREATE TABLE IF NOT EXISTS visitors (
+                ip TEXT PRIMARY KEY, isp TEXT NOT NULL DEFAULT 'Resolving…',
+                first_seen TEXT NOT NULL, last_seen TEXT NOT NULL,
+                request_count INTEGER NOT NULL DEFAULT 1,
+                user_agent TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS visitors_last_seen ON visitors(last_seen);
+            CREATE TABLE IF NOT EXISTS visitor_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT NOT NULL,
+                visited_at TEXT NOT NULL, user_agent TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS visitor_events_time ON visitor_events(visited_at);
         """)
         if conn.execute("SELECT COUNT(*) FROM locations").fetchone()[0] == 0:
             now = datetime.now(timezone.utc).isoformat()
@@ -108,6 +129,71 @@ def csrf_token():
 
 app.jinja_env.globals["csrf_token"] = csrf_token
 app.jinja_env.globals["app_version"] = APP_VERSION
+
+
+def visitor_ip():
+    candidate = request.headers.get("CF-Connecting-IP", "").strip() or (request.remote_addr or "unknown")
+    try:
+        return str(ipaddress.ip_address(candidate))
+    except ValueError:
+        return "unknown"
+
+
+def resolve_isp(ip):
+    try:
+        address = ipaddress.ip_address(ip)
+        if not address.is_global:
+            isp = "Private/local network"
+        else:
+            url = f"https://ipwho.is/{urllib.parse.quote(ip)}?fields=success,connection"
+            req = urllib.request.Request(url, headers={"User-Agent": f"WeatherWatch/{APP_VERSION}"})
+            with urllib.request.urlopen(req, timeout=5) as response:
+                data = json.load(response)
+            connection = data.get("connection") or {}
+            isp = (connection.get("isp") or connection.get("org") or "Unknown ISP")[:160]
+        with db() as conn:
+            conn.execute("UPDATE visitors SET isp=? WHERE ip=?", (isp, ip))
+    except Exception as exc:
+        app.logger.info("ISP lookup failed for %s: %s", ip, exc)
+        with db() as conn:
+            conn.execute("UPDATE visitors SET isp='Lookup unavailable' WHERE ip=?", (ip,))
+    finally:
+        with VISITOR_LOOKUPS_LOCK:
+            VISITOR_LOOKUPS.discard(ip)
+
+
+def record_visitor():
+    # Count only human visits to the public dashboard, not assets, API polling,
+    # health checks, or administration activity.
+    if request.method != "GET" or request.path != "/":
+        return
+    ip = visitor_ip()
+    now = datetime.now(timezone.utc).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=VISITOR_RETENTION_DAYS)).isoformat()
+    agent = request.headers.get("User-Agent", "")[:300]
+    with db() as conn:
+        conn.execute("DELETE FROM visitors WHERE last_seen < ?", (cutoff,))
+        conn.execute("DELETE FROM visitor_events WHERE visited_at < ?", (cutoff,))
+        conn.execute("INSERT INTO visitor_events(ip, visited_at, user_agent) VALUES(?,?,?)", (ip, now, agent))
+        conn.execute("""
+            INSERT INTO visitors(ip, first_seen, last_seen, request_count, user_agent)
+            VALUES(?,?,?,?,?)
+            ON CONFLICT(ip) DO UPDATE SET
+                last_seen=excluded.last_seen,
+                request_count=visitors.request_count+1,
+                user_agent=excluded.user_agent
+        """, (ip, now, now, 1, agent))
+        visitor = conn.execute("SELECT isp FROM visitors WHERE ip=?", (ip,)).fetchone()
+    if visitor and visitor["isp"] == "Resolving…":
+        with VISITOR_LOOKUPS_LOCK:
+            if ip not in VISITOR_LOOKUPS:
+                VISITOR_LOOKUPS.add(ip)
+                threading.Thread(target=resolve_isp, args=(ip,), daemon=True).start()
+
+
+@app.before_request
+def track_public_visitor():
+    record_visitor()
 
 
 @app.before_request
@@ -158,7 +244,17 @@ def admin_exists():
 def index():
     with db() as conn:
         locations = [dict(r) for r in conn.execute("SELECT * FROM locations ORDER BY name")]
-    return render_template("index.html", locations=locations)
+    return render_template("index.html", locations=locations, retention_days=VISITOR_RETENTION_DAYS)
+
+
+@app.post("/api/visitor-heartbeat")
+def visitor_heartbeat():
+    with db() as conn:
+        conn.execute(
+            "UPDATE visitors SET last_seen=? WHERE ip=?",
+            (datetime.now(timezone.utc).isoformat(), visitor_ip()),
+        )
+    return "", 204
 
 
 def met_symbol_to_code(symbol):
@@ -418,9 +514,17 @@ def admin_register():
 @app.get("/admin/dashboard")
 @admin_required
 def admin_dashboard():
+    active_since = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
     with db() as conn:
         locations = conn.execute("SELECT * FROM locations ORDER BY name").fetchall()
-    return render_template("admin/dashboard.html", locations=locations)
+        visitors = conn.execute(
+            "SELECT * FROM visitors WHERE last_seen >= ? ORDER BY last_seen DESC", (active_since,)
+        ).fetchall()
+        visitor_total = conn.execute("SELECT COUNT(*) FROM visitors").fetchone()[0]
+    return render_template(
+        "admin/dashboard.html", locations=locations, visitors=visitors,
+        visitor_total=visitor_total, retention_days=VISITOR_RETENTION_DAYS,
+    )
 
 
 @app.post("/admin/locations")
@@ -482,6 +586,51 @@ def location_delete(location_id):
         WEATHER_CACHE.update(payload=None, expires=0.0)
     flash("Location deleted.", "success")
     return redirect(url_for("admin_dashboard"))
+
+
+def parse_admin_datetime(value, default):
+    if not value:
+        return default
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=MANILA_TZ)
+    return parsed.astimezone(timezone.utc)
+
+
+def csv_safe(value):
+    text = str(value or "")
+    # Prevent spreadsheet formula execution when opening exports in Excel/Sheets.
+    return "'" + text if text.startswith(("=", "+", "-", "@", "\t", "\r")) else text
+
+
+@app.get("/admin/visitors/export")
+@admin_required
+def visitor_export():
+    now = datetime.now(timezone.utc)
+    try:
+        start = parse_admin_datetime(request.args.get("start", ""), now - timedelta(days=1))
+        end = parse_admin_datetime(request.args.get("end", ""), now)
+        if start >= end or end - start > timedelta(days=VISITOR_RETENTION_DAYS):
+            raise ValueError
+    except (ValueError, TypeError):
+        flash(f"Select a valid range up to {VISITOR_RETENTION_DAYS} days.", "error")
+        return redirect(url_for("admin_dashboard"))
+    with db() as conn:
+        rows = conn.execute("""
+            SELECT e.ip, COALESCE(v.isp, 'Unknown ISP') AS isp, e.visited_at, e.user_agent
+            FROM visitor_events e LEFT JOIN visitors v ON v.ip=e.ip
+            WHERE e.visited_at BETWEEN ? AND ? ORDER BY e.visited_at DESC
+        """, (start.isoformat(), end.isoformat())).fetchall()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["IP address", "ISP", "Visited at (UTC)", "User agent"])
+    for row in rows:
+        writer.writerow([csv_safe(row[key]) for key in row.keys()])
+    filename = f"weatherwatch-visitors-{now.strftime('%Y%m%d-%H%M%S')}.csv"
+    return Response(
+        "\ufeff" + output.getvalue(), mimetype="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"', "Cache-Control": "no-store"},
+    )
 
 
 @app.post("/admin/update")

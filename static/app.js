@@ -44,5 +44,14 @@ async function load() {
   }
 }
 
+async function heartbeat() {
+  const token = document.querySelector('meta[name="csrf-token"]')?.content;
+  if (!token || document.visibilityState !== 'visible') return;
+  try {
+    await fetch('/api/visitor-heartbeat', {method:'POST', headers:{'X-CSRF-Token':token}, cache:'no-store'});
+  } catch (_) { /* Weather refresh will surface connectivity errors. */ }
+}
+
 load();
 setInterval(load, 300000);
+setInterval(heartbeat, 120000);
