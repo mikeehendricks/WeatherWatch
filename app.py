@@ -29,11 +29,14 @@ DUMMY_PASSWORD_HASH = "scrypt:32768:8:1$0ZQlMO29KrbGTodV$15ff43ebbcff60f820f090a
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 app = Flask(__name__)
+secure_cookies = os.getenv("COOKIE_SECURE", "1") == "1"
 app.config.update(
     SECRET_KEY=os.getenv("SECRET_KEY") or secrets.token_hex(32),
+    SESSION_COOKIE_NAME="__Host-weatherwatch" if secure_cookies else "weatherwatch",
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
-    SESSION_COOKIE_SECURE=os.getenv("COOKIE_SECURE", "1") == "1",
+    SESSION_COOKIE_SECURE=secure_cookies,
+    SESSION_REFRESH_EACH_REQUEST=True,
     PERMANENT_SESSION_LIFETIME=1800,
     MAX_CONTENT_LENGTH=64 * 1024,
     TRUSTED_HOSTS=([x.strip() for x in os.getenv("TRUSTED_HOSTS", "").split(",") if x.strip()] or None),
@@ -110,6 +113,9 @@ app.jinja_env.globals["app_version"] = APP_VERSION
 @app.before_request
 def verify_csrf():
     if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        origin = request.headers.get("Origin")
+        if origin and urllib.parse.urlsplit(origin).netloc != request.host:
+            return "Cross-origin request rejected.", 403
         token = request.form.get("csrf_token") or request.headers.get("X-CSRF-Token", "")
         expected = session.get("csrf", "")
         if not token or not expected or not hmac.compare_digest(token, expected):
@@ -122,7 +128,10 @@ def secure_headers(response):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
-    response.headers["Content-Security-Policy"] = "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'"
+    response.headers["Content-Security-Policy"] = "default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'"
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
+    response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
     if request.path.startswith("/admin"):
         response.headers["Cache-Control"] = "no-store, max-age=0"
         response.headers["Pragma"] = "no-cache"
@@ -331,11 +340,16 @@ def login_is_limited(ip, username):
     cutoff = (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat()
     with db() as conn:
         conn.execute("DELETE FROM login_attempts WHERE attempted_at < ?", (cutoff,))
-        count = conn.execute(
+        pair_count = conn.execute(
             "SELECT COUNT(*) FROM login_attempts WHERE ip = ? AND username = ? AND attempted_at >= ?",
             (ip[:64], username[:40], cutoff),
         ).fetchone()[0]
-    return count >= 5
+        ip_count = conn.execute(
+            "SELECT COUNT(*) FROM login_attempts WHERE ip = ? AND attempted_at >= ?",
+            (ip[:64], cutoff),
+        ).fetchone()[0]
+    # Stop both targeted guessing and username-rotation bypasses.
+    return pair_count >= 5 or ip_count >= 20
 
 
 def record_login_failure(ip, username):

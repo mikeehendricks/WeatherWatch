@@ -10,7 +10,12 @@ The application was reviewed for OWASP-style web risks, deployment weaknesses, d
 
 ### Findings fixed
 
-- **Brute-force login attempts:** added persistent per-IP and per-username throttling (five failures per 15 minutes), bounded inputs, cleanup, and constant-work password verification for unknown users.
+- **Login throttle bypass by username rotation:** rate limiting now enforces both five failures per IP/username pair and 20 total failures per IP in 15 minutes.
+- **Cross-site request defense in depth:** state-changing requests with an `Origin` header are rejected unless the origin matches the validated host, in addition to mandatory CSRF tokens.
+- **Browser isolation hardening:** CSP now restricts base URLs, forms, and plugins; COOP, CORP, and cross-domain-policy denial headers were added.
+- **Session-cookie hardening:** HTTPS deployments use a `__Host-` prefixed cookie, preventing Domain scoping and requiring a secure host-only cookie.
+- **Server fingerprint reduction:** generated nginx configuration disables version tokens.
+- **Brute-force login attempts:** added persistent per-IP and per-username throttling, bounded inputs, cleanup, and constant-work password verification for unknown users.
 - **Stored script injection risk in admin confirmations:** removed inline JavaScript containing location data. Confirmations now use a same-origin static script and constant messages compatible with the strict CSP.
 - **Sensitive-page caching:** admin responses now send `Cache-Control: no-store` and `Pragma: no-cache`.
 - **Host-header protection:** deployments can set `TRUSTED_HOSTS`; the installer restricts it to the configured domain or server addresses.

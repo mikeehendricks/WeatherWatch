@@ -156,6 +156,7 @@ server {
     listen 80;
     listen [::]:80;
     server_name $DOMAIN;
+    server_tokens off;
     client_max_body_size 64k;
     location / {
         proxy_pass http://127.0.0.1:8000;

@@ -39,6 +39,25 @@ def test_inline_event_handlers_absent(tmp_path, monkeypatch):
     assert b'onsubmit=' not in response.data
 
 
+def test_cross_origin_post_rejected(tmp_path, monkeypatch):
+    module = load(tmp_path, monkeypatch); client = module.app.test_client()
+    csrf = token(client)
+    response = client.post('/admin/register', headers={'Origin': 'https://attacker.example'}, data={
+        'csrf_token': csrf, 'username': 'operator', 'password': 'a-very-strong-password',
+        'confirmation': 'a-very-strong-password'
+    })
+    assert response.status_code == 403
+
+
+def test_security_isolation_headers(tmp_path, monkeypatch):
+    module = load(tmp_path, monkeypatch)
+    response = module.app.test_client().get('/')
+    assert response.headers['Cross-Origin-Opener-Policy'] == 'same-origin'
+    assert response.headers['Cross-Origin-Resource-Policy'] == 'same-origin'
+    assert "object-src 'none'" in response.headers['Content-Security-Policy']
+    assert "form-action 'self'" in response.headers['Content-Security-Policy']
+
+
 def test_version_in_footer(tmp_path, monkeypatch):
     module = load(tmp_path, monkeypatch)
     response = module.app.test_client().get('/')
