@@ -101,12 +101,18 @@ if [[ -f "$ENV_FILE" ]]; then
   SECRET_KEY="$(sed -n 's/^SECRET_KEY=//p' "$ENV_FILE" | head -n1)"
 fi
 SECRET_KEY="${SECRET_KEY:-$(python3 -c 'import secrets; print(secrets.token_hex(32))')}"
+if [[ "$DOMAIN" == "_" ]]; then
+  TRUSTED_HOSTS="localhost,127.0.0.1,$(hostname -I | tr ' ' ',' | sed 's/,$//')"
+else
+  TRUSTED_HOSTS="$DOMAIN,localhost,127.0.0.1"
+fi
 umask 077
 cat >"$ENV_FILE" <<EOF
 SECRET_KEY=$SECRET_KEY
 COOKIE_SECURE=$([[ "$INSTALL_HTTPS" == "1" ]] && echo 1 || echo 0)
 ENABLE_WEB_UPDATES=$ENABLE_UPDATES
 WEATHERWATCH_DATA_DIR=$DATA_DIR
+TRUSTED_HOSTS=$TRUSTED_HOSTS
 EOF
 chown root:weatherwatch "$ENV_FILE"
 chmod 0640 "$ENV_FILE"

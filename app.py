@@ -6,9 +6,10 @@ import sqlite3
 import subprocess
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
+import re
 
 from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -17,6 +18,9 @@ from werkzeug.security import check_password_hash, generate_password_hash
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.getenv("WEATHERWATCH_DATA_DIR", BASE_DIR / "data"))
 DB_PATH = DATA_DIR / "weatherwatch.db"
+VERSION_FILE = BASE_DIR / "VERSION"
+APP_VERSION = VERSION_FILE.read_text(encoding="utf-8").strip() if VERSION_FILE.exists() else "dev"
+DUMMY_PASSWORD_HASH = "scrypt:32768:8:1$0ZQlMO29KrbGTodV$15ff43ebbcff60f820f090a9f02af5a33682d757db92ad1c584581819183a210c3271ad9d8ea45df68deeed3b5fb1976a1a85b4bef17bd37b9f727588193330e"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 app = Flask(__name__)
@@ -27,6 +31,7 @@ app.config.update(
     SESSION_COOKIE_SECURE=os.getenv("COOKIE_SECURE", "1") == "1",
     PERMANENT_SESSION_LIFETIME=1800,
     MAX_CONTENT_LENGTH=64 * 1024,
+    TRUSTED_HOSTS=([x.strip() for x in os.getenv("TRUSTED_HOSTS", "").split(",") if x.strip()] or None),
 )
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
 
@@ -64,6 +69,12 @@ def init_db():
                 longitude REAL NOT NULL CHECK(longitude BETWEEN -180 AND 180),
                 plus_code TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS login_attempts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT NOT NULL,
+                username TEXT NOT NULL, attempted_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS login_attempts_lookup
+                ON login_attempts(ip, username, attempted_at);
         """)
         if conn.execute("SELECT COUNT(*) FROM locations").fetchone()[0] == 0:
             now = datetime.now(timezone.utc).isoformat()
@@ -80,6 +91,7 @@ def csrf_token():
 
 
 app.jinja_env.globals["csrf_token"] = csrf_token
+app.jinja_env.globals["app_version"] = APP_VERSION
 
 
 @app.before_request
@@ -98,6 +110,9 @@ def secure_headers(response):
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
     response.headers["Content-Security-Policy"] = "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'"
+    if request.path.startswith("/admin"):
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        response.headers["Pragma"] = "no-cache"
     if request.is_secure:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
@@ -134,8 +149,8 @@ def weather():
         "latitude": ",".join(str(x["latitude"]) for x in locations),
         "longitude": ",".join(str(x["longitude"]) for x in locations),
         "current": "temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_gusts_10m",
-        "daily": "precipitation_sum,wind_gusts_10m_max,weather_code",
-        "forecast_days": 1, "timezone": "Asia/Manila", "wind_speed_unit": "kmh"
+        "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_gusts_10m_max",
+        "forecast_days": 5, "timezone": "Asia/Manila", "wind_speed_unit": "kmh"
     })
     try:
         req = urllib.request.Request("https://api.open-meteo.com/v1/forecast?" + params, headers={"User-Agent": "WeatherWatch/1.0"})
@@ -149,7 +164,20 @@ def weather():
             rain = float((daily.get("precipitation_sum") or [0])[0] or 0)
             gust = float((daily.get("wind_gusts_10m_max") or [0])[0] or 0)
             severity = classify(rain, gust)
-            result.append({**loc, "current": current, "rain": rain, "gust": gust, "severity": severity})
+            days = []
+            for i, date in enumerate(daily.get("time", [])[:5]):
+                day_rain = float((daily.get("precipitation_sum") or [0] * 5)[i] or 0)
+                day_gust = float((daily.get("wind_gusts_10m_max") or [0] * 5)[i] or 0)
+                days.append({
+                    "date": date,
+                    "weather_code": (daily.get("weather_code") or [0] * 5)[i],
+                    "temperature_max": (daily.get("temperature_2m_max") or [None] * 5)[i],
+                    "temperature_min": (daily.get("temperature_2m_min") or [None] * 5)[i],
+                    "rain": day_rain,
+                    "gust": day_gust,
+                    "severity": classify(day_rain, day_gust),
+                })
+            result.append({**loc, "current": current, "rain": rain, "gust": gust, "severity": severity, "forecast": days})
         return jsonify({"locations": result, "updated_at": datetime.now(timezone.utc).isoformat()})
     except Exception as exc:
         app.logger.warning("Weather provider error: %s", exc)
@@ -164,6 +192,30 @@ def classify(rain, gust):
     return "normal"
 
 
+def login_is_limited(ip, username):
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat()
+    with db() as conn:
+        conn.execute("DELETE FROM login_attempts WHERE attempted_at < ?", (cutoff,))
+        count = conn.execute(
+            "SELECT COUNT(*) FROM login_attempts WHERE ip = ? AND username = ? AND attempted_at >= ?",
+            (ip[:64], username[:40], cutoff),
+        ).fetchone()[0]
+    return count >= 5
+
+
+def record_login_failure(ip, username):
+    with db() as conn:
+        conn.execute(
+            "INSERT INTO login_attempts(ip, username, attempted_at) VALUES(?,?,?)",
+            (ip[:64], username[:40], datetime.now(timezone.utc).isoformat()),
+        )
+
+
+def clear_login_failures(ip, username):
+    with db() as conn:
+        conn.execute("DELETE FROM login_attempts WHERE ip = ? AND username = ?", (ip[:64], username[:40]))
+
+
 @app.route("/admin", methods=["GET", "POST"])
 def admin_login():
     if session.get("admin_id"):
@@ -171,13 +223,20 @@ def admin_login():
     if not admin_exists():
         return redirect(url_for("admin_register"))
     if request.method == "POST":
-        username = request.form.get("username", "").strip()
-        password = request.form.get("password", "")
+        username = request.form.get("username", "").strip()[:40]
+        password = request.form.get("password", "")[:256]
+        ip = request.remote_addr or "unknown"
+        if login_is_limited(ip, username):
+            flash("Too many failed attempts. Try again in 15 minutes.", "error")
+            return render_template("admin/login.html"), 429
         with db() as conn:
             user = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
-        if user and check_password_hash(user["password_hash"], password):
+        password_ok = check_password_hash(user["password_hash"] if user else DUMMY_PASSWORD_HASH, password)
+        if user and password_ok:
+            clear_login_failures(ip, username)
             session.clear(); session["admin_id"] = user["id"]; session.permanent = True
             return redirect(url_for("admin_dashboard"))
+        record_login_failure(ip, username)
         flash("Invalid username or password.", "error")
     return render_template("admin/login.html")
 
@@ -190,10 +249,10 @@ def admin_register():
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
         confirmation = request.form.get("confirmation", "")
-        if len(username) < 3 or len(username) > 40:
-            flash("Username must be 3–40 characters.", "error")
-        elif len(password) < 12:
-            flash("Password must contain at least 12 characters.", "error")
+        if not re.fullmatch(r"[A-Za-z0-9_.-]{3,40}", username):
+            flash("Username must be 3–40 letters, numbers, dots, dashes, or underscores.", "error")
+        elif len(password) < 12 or len(password) > 256:
+            flash("Password must contain 12–256 characters.", "error")
         elif password != confirmation:
             flash("Passwords do not match.", "error")
         else:

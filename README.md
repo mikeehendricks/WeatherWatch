@@ -5,8 +5,9 @@ A responsive operations dashboard for current conditions and today's rain/wind f
 ## Features
 
 - Live dashboard with five-level severity color matrix
+- Five-day forecast for every monitored site
 - 11 preloaded locations from the supplied list
-- Automatic refresh every five minutes
+- Automatic refresh every five minutes and visible application version
 - Unlinked `/admin` portal
 - One-time administrator registration (closes after the first account)
 - Scrypt password hashing, CSRF protection, secure cookies, security headers, parameterized SQL
