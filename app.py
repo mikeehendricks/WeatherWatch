@@ -27,6 +27,7 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.getenv("WEATHERWATCH_DATA_DIR", BASE_DIR / "data"))
 DB_PATH = DATA_DIR / "weatherwatch.db"
 VERSION_FILE = BASE_DIR / "VERSION"
+UPDATE_STATE_FILE = DATA_DIR / "update-state.json"
 APP_VERSION = VERSION_FILE.read_text(encoding="utf-8").strip() if VERSION_FILE.exists() else "dev"
 DUMMY_PASSWORD_HASH = "scrypt:32768:8:1$0ZQlMO29KrbGTodV$15ff43ebbcff60f820f090a9f02af5a33682d757db92ad1c584581819183a210c3271ad9d8ea45df68deeed3b5fb1976a1a85b4bef17bd37b9f727588193330e"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -238,6 +239,43 @@ def admin_required(fn):
 def admin_exists():
     with db() as conn:
         return conn.execute("SELECT 1 FROM users LIMIT 1").fetchone() is not None
+
+
+def update_command(command, timeout=60):
+    return subprocess.run(
+        command, cwd=BASE_DIR, check=True, capture_output=True,
+        text=True, timeout=timeout, env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+    )
+
+
+def load_update_state():
+    try:
+        state = json.loads(UPDATE_STATE_FILE.read_text(encoding="utf-8"))
+        return state if isinstance(state, dict) else {}
+    except (OSError, ValueError, TypeError):
+        return {}
+
+
+def save_update_state(state):
+    temporary = UPDATE_STATE_FILE.with_suffix(".tmp")
+    temporary.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    os.chmod(temporary, 0o600)
+    os.replace(temporary, UPDATE_STATE_FILE)
+
+
+def version_at_commit(commit):
+    try:
+        return update_command(["git", "show", f"{commit}:VERSION"], 10).stdout.strip()[:40] or "unknown"
+    except subprocess.SubprocessError:
+        return "unknown"
+
+
+def request_graceful_reload():
+    parent_pid = os.getppid()
+    cmdline = Path(f"/proc/{parent_pid}/cmdline").read_bytes().replace(b"\0", b" ").decode("utf-8", "replace")
+    if "gunicorn" not in cmdline:
+        raise RuntimeError("automatic reload is available only under Gunicorn")
+    os.kill(parent_pid, signal.SIGHUP)
 
 
 @app.get("/")
@@ -521,9 +559,15 @@ def admin_dashboard():
             "SELECT * FROM visitors WHERE last_seen >= ? ORDER BY last_seen DESC", (active_since,)
         ).fetchall()
         visitor_total = conn.execute("SELECT COUNT(*) FROM visitors").fetchone()[0]
+    update_state = load_update_state()
+    rollback_available = bool(
+        update_state.get("previous_commit")
+        and update_state.get("status") in {"updated", "failed", "rollback_failed"}
+    )
     return render_template(
         "admin/dashboard.html", locations=locations, visitors=visitors,
         visitor_total=visitor_total, retention_days=VISITOR_RETENTION_DAYS,
+        update_state=update_state, rollback_available=rollback_available,
     )
 
 
@@ -639,43 +683,103 @@ def system_update():
     if os.getenv("ENABLE_WEB_UPDATES", "0") != "1":
         flash("Web updates are disabled. Set ENABLE_WEB_UPDATES=1 to enable them.", "error")
         return redirect(url_for("admin_dashboard"))
+    state = {}
     try:
-        def run(command, timeout=60):
-            return subprocess.run(
-                command, cwd=BASE_DIR, check=True, capture_output=True,
-                text=True, timeout=timeout, env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
-            )
-
-        # Refuse to overwrite local administrator changes or accept a history rewrite.
-        run(["git", "diff", "--quiet"])
-        run(["git", "diff", "--cached", "--quiet"])
-        before = run(["git", "rev-parse", "--short", "HEAD"], 10).stdout.strip()
-        run(["git", "fetch", "--prune", "origin"])
-        run(["git", "merge", "--ff-only", "origin/main"])
-        after = run(["git", "rev-parse", "--short", "HEAD"], 10).stdout.strip()
+        # Never overwrite local administrator changes or accept rewritten history.
+        update_command(["git", "diff", "--quiet"])
+        update_command(["git", "diff", "--cached", "--quiet"])
+        before = update_command(["git", "rev-parse", "HEAD"], 10).stdout.strip()
+        update_command(["git", "fetch", "--prune", "origin"])
+        update_command(["git", "merge", "--ff-only", "origin/main"])
+        after = update_command(["git", "rev-parse", "HEAD"], 10).stdout.strip()
 
         if before == after:
             flash(f"Already up to date (version {APP_VERSION}).", "success")
         else:
-            # Install pinned dependencies before gracefully reloading Gunicorn. ExecReload
-            # lets this request finish while replacement workers start with the new code.
-            run([str(BASE_DIR / ".venv" / "bin" / "pip"), "install", "--requirement", str(BASE_DIR / "requirements.txt")], 180)
-            # Gunicorn's master and workers run under the same restricted account,
-            # so a worker may safely request a graceful reload without sudo/root.
-            # HUP lets this request finish before the old worker exits.
-            parent_pid = os.getppid()
-            parent_cmdline = Path(f"/proc/{parent_pid}/cmdline").read_bytes().replace(b"\0", b" ").decode("utf-8", "replace")
-            if "gunicorn" not in parent_cmdline:
-                raise RuntimeError("automatic reload is available only under Gunicorn")
-            os.kill(parent_pid, signal.SIGHUP)
-            flash(f"Updated {before} → {after}. WeatherWatch is reloading automatically; refresh in a few seconds.", "success")
+            state = {
+                "status": "updated", "previous_commit": before,
+                "previous_version": version_at_commit(before),
+                "updated_commit": after, "updated_version": version_at_commit(after),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            # Save the known-good commit before dependency installation, ensuring
+            # rollback remains available even when installation or reload fails.
+            save_update_state(state)
+            update_command([
+                str(BASE_DIR / ".venv" / "bin" / "pip"), "install",
+                "--requirement", str(BASE_DIR / "requirements.txt")
+            ], 180)
+            request_graceful_reload()
+            flash(
+                f"Updated {before[:7]} → {after[:7]}. WeatherWatch is reloading automatically; "
+                "the previous version remains available for rollback.", "success"
+            )
     except subprocess.CalledProcessError as exc:
         detail = (exc.stderr or exc.stdout or "unknown command error").strip().splitlines()[-1][:240]
         app.logger.error("Update command failed (%s): %s", exc.cmd, detail)
-        flash(f"Update failed: {detail}", "error")
+        if state:
+            state.update(status="failed", error=detail, failed_at=datetime.now(timezone.utc).isoformat())
+            save_update_state(state)
+        flash(f"Update failed: {detail}. Use Roll back if an update was downloaded.", "error")
     except (subprocess.SubprocessError, OSError, RuntimeError) as exc:
         app.logger.error("Update failed: %s", exc)
-        flash("Update failed. Check the WeatherWatch service log for details.", "error")
+        if state:
+            state.update(status="failed", error=str(exc)[:240], failed_at=datetime.now(timezone.utc).isoformat())
+            save_update_state(state)
+        flash("Update failed. Use Roll back if an update was downloaded, or check the service log.", "error")
+    return redirect(url_for("admin_dashboard"))
+
+
+@app.post("/admin/rollback")
+@admin_required
+def system_rollback():
+    if os.getenv("ENABLE_WEB_UPDATES", "0") != "1":
+        flash("Web updates are disabled; rollback is unavailable.", "error")
+        return redirect(url_for("admin_dashboard"))
+    state = load_update_state()
+    previous = str(state.get("previous_commit", ""))
+    if not re.fullmatch(r"[0-9a-f]{40}", previous):
+        flash("No verified previous version is available for rollback.", "error")
+        return redirect(url_for("admin_dashboard"))
+    current = ""
+    try:
+        update_command(["git", "diff", "--quiet"])
+        update_command(["git", "diff", "--cached", "--quiet"])
+        current = update_command(["git", "rev-parse", "HEAD"], 10).stdout.strip()
+        update_command(["git", "cat-file", "-e", f"{previous}^{{commit}}"], 10)
+        # Only roll back to the exact ancestor recorded immediately before update.
+        update_command(["git", "merge-base", "--is-ancestor", previous, current], 10)
+        if current == previous:
+            state.update(status="rolled_back", rolled_back_at=datetime.now(timezone.utc).isoformat())
+            save_update_state(state)
+            flash("The previous version is already active.", "success")
+            return redirect(url_for("admin_dashboard"))
+
+        update_command(["git", "reset", "--hard", previous], 30)
+        try:
+            update_command([
+                str(BASE_DIR / ".venv" / "bin" / "pip"), "install",
+                "--requirement", str(BASE_DIR / "requirements.txt")
+            ], 180)
+        except Exception:
+            # Restore the newer source if old dependencies cannot be installed.
+            update_command(["git", "reset", "--hard", current], 30)
+            raise
+        state.update(
+            status="rolled_back", rolled_back_from=current,
+            rolled_back_at=datetime.now(timezone.utc).isoformat(),
+        )
+        save_update_state(state)
+        request_graceful_reload()
+        flash(
+            f"Rolled back to version {state.get('previous_version', 'unknown')} "
+            f"({previous[:7]}). WeatherWatch is reloading.", "success"
+        )
+    except (subprocess.SubprocessError, OSError, RuntimeError) as exc:
+        app.logger.error("Rollback failed: %s", exc)
+        state.update(status="rollback_failed", error=str(exc)[:240], failed_at=datetime.now(timezone.utc).isoformat())
+        save_update_state(state)
+        flash("Rollback failed safely. The service log contains details; use SSH recovery if needed.", "error")
     return redirect(url_for("admin_dashboard"))
 
 

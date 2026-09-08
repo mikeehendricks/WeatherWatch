@@ -17,7 +17,8 @@ A responsive operations dashboard for current conditions and today's rain/wind f
 - Admin-only active visitor view with IP and ISP information
 - Date/time-filtered visitor-event export to CSV
 - Automatic visitor-data retention (30 days by default)
-- Optional authenticated, fast-forward-only Git updater
+- Authenticated, fast-forward-only Git updater with automatic dependency installation
+- One-click rollback to the exact version active before the last update
 - SQLite persistence outside the source tree
 - Gunicorn + nginx + systemd production setup
 
