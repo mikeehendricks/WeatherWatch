@@ -48,7 +48,7 @@ WEATHER_CACHE_LOCK = threading.Lock()
 MANILA_TZ = ZoneInfo("Asia/Manila")
 MET_USER_AGENT = os.getenv(
     "MET_NORWAY_USER_AGENT",
-    "WeatherWatch/1.3 (+https://github.com/mikeehendricks/WeatherWatch)",
+    f"WeatherWatch/{APP_VERSION} (+https://github.com/mikeehendricks/WeatherWatch)",
 )
 
 SEED_LOCATIONS = [
@@ -433,10 +433,44 @@ def location_add():
         if not name or not address or not (-90 <= lat <= 90) or not (-180 <= lon <= 180): raise ValueError
         with db() as conn:
             conn.execute("INSERT INTO locations(name,address,latitude,longitude,plus_code,created_at) VALUES(?,?,?,?,?,?)", (name,address,lat,lon,plus,datetime.now(timezone.utc).isoformat()))
+        with WEATHER_CACHE_LOCK:
+            WEATHER_CACHE.update(payload=None, expires=0.0)
         flash("Location added.", "success")
     except (ValueError, KeyError):
         flash("Please provide valid location details and coordinates.", "error")
     return redirect(url_for("admin_dashboard"))
+
+
+@app.route("/admin/locations/<int:location_id>/edit", methods=["GET", "POST"])
+@admin_required
+def location_edit(location_id):
+    with db() as conn:
+        location = conn.execute("SELECT * FROM locations WHERE id = ?", (location_id,)).fetchone()
+    if location is None:
+        return "Location not found.", 404
+    if request.method == "POST":
+        try:
+            name = request.form["name"].strip()
+            address = request.form["address"].strip()
+            latitude = float(request.form["latitude"])
+            longitude = float(request.form["longitude"])
+            plus_code = request.form.get("plus_code", "").strip()
+            if not name or len(name) > 120 or not address or len(address) > 300:
+                raise ValueError
+            if len(plus_code) > 150 or not (-90 <= latitude <= 90) or not (-180 <= longitude <= 180):
+                raise ValueError
+            with db() as conn:
+                conn.execute(
+                    "UPDATE locations SET name=?, address=?, latitude=?, longitude=?, plus_code=? WHERE id=?",
+                    (name, address, latitude, longitude, plus_code, location_id),
+                )
+            with WEATHER_CACHE_LOCK:
+                WEATHER_CACHE.update(payload=None, expires=0.0)
+            flash("Location updated.", "success")
+            return redirect(url_for("admin_dashboard"))
+        except (ValueError, KeyError):
+            flash("Please provide valid site details and coordinates.", "error")
+    return render_template("admin/edit_location.html", location=location)
 
 
 @app.post("/admin/locations/<int:location_id>/delete")
@@ -444,6 +478,8 @@ def location_add():
 def location_delete(location_id):
     with db() as conn:
         conn.execute("DELETE FROM locations WHERE id = ?", (location_id,))
+    with WEATHER_CACHE_LOCK:
+        WEATHER_CACHE.update(payload=None, expires=0.0)
     flash("Location deleted.", "success")
     return redirect(url_for("admin_dashboard"))
 

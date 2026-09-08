@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block title %}Edit {{ location.name }} — WeatherWatch{% endblock %}
+{% block body %}
+<header class="adminbar">
+  <a class="brand" href="/">Weather<span>Watch</span></a>
+  <div><a href="{{ url_for('admin_dashboard') }}" class="secondary">Back to locations</a></div>
+</header>
+<main class="admin edit-page">
+  <div class="admin-title"><div><p class="eyebrow">ADMINISTRATION</p><h1>Edit location</h1><p>Update the site's identifying information and forecast coordinates.</p></div></div>
+  {% include 'admin/messages.html' %}
+  <section class="panel">
+    <form method="post" class="location-form edit-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>Site name<input name="name" required maxlength="120" value="{{ location.name }}" autofocus></label>
+      <label class="wide">Address<input name="address" required maxlength="300" value="{{ location.address }}"></label>
+      <label>Latitude<input name="latitude" type="number" step="any" min="-90" max="90" required value="{{ location.latitude }}"></label>
+      <label>Longitude<input name="longitude" type="number" step="any" min="-180" max="180" required value="{{ location.longitude }}"></label>
+      <label>Google Maps Plus Code<input name="plus_code" maxlength="150" value="{{ location.plus_code }}"></label>
+      <div class="form-actions"><a class="secondary" href="{{ url_for('admin_dashboard') }}">Cancel</a><button type="submit">Save changes</button></div>
+    </form>
+  </section>
+</main>
+{% endblock %}

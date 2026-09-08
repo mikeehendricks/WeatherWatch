@@ -13,7 +13,7 @@ A responsive operations dashboard for current conditions and today's rain/wind f
 - Unlinked `/admin` portal
 - One-time administrator registration (closes after the first account)
 - Scrypt password hashing, CSRF protection, secure cookies, security headers, parameterized SQL
-- Add/delete locations
+- Add, edit, and delete locations
 - Optional authenticated, fast-forward-only Git updater
 - SQLite persistence outside the source tree
 - Gunicorn + nginx + systemd production setup
