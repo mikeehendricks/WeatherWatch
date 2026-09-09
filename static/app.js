@@ -15,6 +15,38 @@ function forecastHtml(days = []) {
     </div>`).join('')}</div>`;
 }
 
+function atmosphereFor(code) {
+  if ([95,96,99].includes(code)) return 'storm';
+  if ([51,53,55,61,63,65,71,80,81,82].includes(code)) return 'rainy';
+  if ([45,48].includes(code)) return 'foggy';
+  if ([2,3].includes(code)) return 'cloudy';
+  return 'sunny';
+}
+
+function selectSite(card) {
+  document.querySelectorAll('.weather-card[aria-pressed]').forEach(item => item.setAttribute('aria-pressed', String(item === card)));
+  const shell = document.querySelector('.site-shell');
+  shell.dataset.weather = atmosphereFor(Number(card.dataset.weatherCode));
+  shell.dataset.selectedSite = card.dataset.siteName;
+  const condition = labels[Number(card.dataset.weatherCode)] || 'current weather';
+  const hint = document.querySelector('#scene-hint');
+  hint.textContent = `● ${card.dataset.siteName} · ${condition}`;
+  card.scrollIntoView({behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block:'nearest'});
+}
+
+function bindSiteScenes() {
+  const cards = [...document.querySelectorAll('.weather-card[data-weather-code]')];
+  cards.forEach(card => {
+    card.addEventListener('click', () => selectSite(card));
+    card.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectSite(card); }
+    });
+  });
+  const selected = document.querySelector('.site-shell').dataset.selectedSite;
+  const previous = cards.find(card => card.dataset.siteName === selected);
+  if (previous) selectSite(previous);
+}
+
 async function load() {
   const notice = document.querySelector('#notice');
   try {
@@ -23,7 +55,7 @@ async function load() {
     if (!response.ok) throw new Error(data.error || 'Could not load weather.');
     document.querySelector('#grid').innerHTML = data.locations.map(location => {
       const code = location.current.weather_code;
-      return `<article class="weather-card severity-${esc(location.severity)}">
+      return `<article class="weather-card severity-${esc(location.severity)}" role="button" tabindex="0" aria-pressed="false" data-weather-code="${number(code)}" data-site-name="${esc(location.name)}" aria-label="Show ${esc(labels[code] || 'weather')} atmosphere for ${esc(location.name)}">
         <div class="card-heading">
           <div><p class="card-label">Site</p><h2>${esc(location.name)}</h2><p>${esc(location.address)}</p></div>
           <span class="severity-chip"><i></i>${esc(caps[location.severity])}</span>
@@ -39,6 +71,7 @@ async function load() {
         <div class="card-meta"><span><b>Source</b>${esc(location.source)}</span><span title="${esc(location.plus_code)}">${number(location.latitude).toFixed(3)}, ${number(location.longitude).toFixed(3)}</span></div>
       </article>`;
     }).join('');
+    bindSiteScenes();
     document.querySelector('#updated').textContent = `${data.stale ? 'Last available update' : 'Updated'} ${new Date(data.updated_at).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}`;
     notice.hidden = true;
   } catch (error) {

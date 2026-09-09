@@ -8,6 +8,7 @@ A responsive operations dashboard for current conditions and multi-provider fore
 - Multi-provider data from Open-Meteo and MET Norway
 - Safety-first consensus uses the higher rain/wind risk and averages temperatures
 - Five-day forecast for every monitored site
+- Clickable site cards with condition-aware sunny, cloudy, rainy, foggy, and storm dashboard atmospheres
 - 11 preloaded locations from the supplied list
 - Branded favicon and Apple touch icon
 - Automatic refresh every five minutes, immediate cross-worker location synchronization, and visible application version

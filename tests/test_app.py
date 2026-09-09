@@ -22,6 +22,8 @@ def test_home_and_seed_data(tmp_path, monkeypatch):
     assert response.status_code==200
     assert b"Therma South Inc" in response.data
     assert b"Made with" in response.data
+    assert b"weather-ambient" in response.data
+    assert b"Select a site to reflect its weather" in response.data
     assert b"/admin" not in response.data
 
 

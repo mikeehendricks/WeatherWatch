@@ -1,7 +1,8 @@
 {% extends 'base.html' %}
 {% block head %}<meta name="csrf-token" content="{{ csrf_token() }}"><script src="{{ url_for('static',filename='app.js',v=app_version) }}" defer></script>{% endblock %}
 {% block body %}
-<div class="site-shell">
+<div class="site-shell" data-weather="default">
+  <div class="weather-ambient" aria-hidden="true"><div class="ambient-sun"></div><div class="ambient-cloud cloud-one"></div><div class="ambient-cloud cloud-two"></div><div class="ambient-rain">{% for _ in range(24) %}<i></i>{% endfor %}</div><div class="ambient-flash"></div></div>
   <nav class="public-nav" aria-label="WeatherWatch">
     <a class="wordmark" href="/" aria-label="WeatherWatch home"><span class="weather-mark" aria-hidden="true">◒</span>WeatherWatch</a>
     <div class="live-pill"><span aria-hidden="true"></span>Live</div>
@@ -10,7 +11,7 @@
     <div>
       <p class="section-label">Operations overview</p>
       <h1>Weather at every site.</h1>
-      <p class="overview-copy">Current conditions and a five-day, multi-provider outlook for {{ locations|length }} operational locations.</p>
+      <p class="overview-copy">Current conditions and a five-day, multi-provider outlook for {{ locations|length }} operational locations.</p><p class="scene-hint" id="scene-hint"><span aria-hidden="true">☝︎</span> Select a site to reflect its weather across the dashboard.</p>
     </div>
     <div class="refresh-state" aria-live="polite"><span class="refresh-icon" aria-hidden="true">↻</span><div><b>Updates automatically</b><small id="updated">Loading weather…</small></div></div>
   </header>
