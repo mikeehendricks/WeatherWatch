@@ -47,7 +47,7 @@ app.config.update(
 )
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
 
-WEATHER_CACHE = {"expires": 0.0, "payload": None}
+WEATHER_CACHE = {"expires": 0.0, "payload": None, "location_key": None}
 WEATHER_CACHE_LOCK = threading.Lock()
 VISITOR_LOOKUPS = set()
 VISITOR_LOOKUPS_LOCK = threading.Lock()
@@ -366,17 +366,36 @@ def mean_available(*values):
     return sum(valid) / len(valid) if valid else None
 
 
+def locations_cache_key(locations):
+    """Create a stable cache identity shared conceptually across all workers."""
+    return tuple(
+        (item["id"], item["name"], item["address"], item["latitude"], item["longitude"], item["plus_code"])
+        for item in locations
+    )
+
+
 @app.get("/api/weather")
 def weather():
-    now = time.monotonic()
-    with WEATHER_CACHE_LOCK:
-        if WEATHER_CACHE["payload"] is not None and WEATHER_CACHE["expires"] > now:
-            return jsonify(WEATHER_CACHE["payload"])
-
+    # Read the lightweight location list before consulting the forecast cache.
+    # Gunicorn workers have independent memory, so an identity key prevents a
+    # worker from serving an old location list after another worker edits it.
     with db() as conn:
         locations = [dict(r) for r in conn.execute("SELECT * FROM locations ORDER BY name")]
+    location_key = locations_cache_key(locations)
+    now = time.monotonic()
+    with WEATHER_CACHE_LOCK:
+        if (
+            WEATHER_CACHE["payload"] is not None
+            and WEATHER_CACHE["expires"] > now
+            and WEATHER_CACHE["location_key"] == location_key
+        ):
+            return jsonify(WEATHER_CACHE["payload"])
+
     if not locations:
-        return jsonify({"locations": [], "updated_at": datetime.now(timezone.utc).isoformat()})
+        payload = {"locations": [], "updated_at": datetime.now(timezone.utc).isoformat()}
+        with WEATHER_CACHE_LOCK:
+            WEATHER_CACHE.update(payload=payload, expires=now + 300, location_key=location_key)
+        return jsonify(payload)
 
     params = urllib.parse.urlencode({
         "latitude": ",".join(str(x["latitude"]) for x in locations),
@@ -451,12 +470,12 @@ def weather():
             })
         payload = {"locations": result, "updated_at": datetime.now(timezone.utc).isoformat(), "method": "Safety-first multi-provider consensus"}
         with WEATHER_CACHE_LOCK:
-            WEATHER_CACHE.update(payload=payload, expires=time.monotonic() + 300)
+            WEATHER_CACHE.update(payload=payload, expires=time.monotonic() + 300, location_key=location_key)
         return jsonify(payload)
     except Exception as exc:
         app.logger.warning("Weather provider error: %s", exc)
         with WEATHER_CACHE_LOCK:
-            stale = WEATHER_CACHE["payload"]
+            stale = WEATHER_CACHE["payload"] if WEATHER_CACHE["location_key"] == location_key else None
         if stale is not None:
             return jsonify({**stale, "stale": True})
         return jsonify({"error": "Weather data is temporarily unavailable."}), 503

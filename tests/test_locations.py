@@ -40,6 +40,19 @@ def test_edit_location(tmp_path, monkeypatch):
     assert row['latitude'] == 14.7
 
 
+def test_location_cache_key_changes_for_adds_and_edits(tmp_path, monkeypatch):
+    module, _ = authenticated_client(tmp_path, monkeypatch)
+    with module.db() as conn:
+        original = [dict(row) for row in conn.execute('SELECT * FROM locations ORDER BY name')]
+        conn.execute("INSERT INTO locations(name,address,latitude,longitude,plus_code,created_at) VALUES(?,?,?,?,?,?)",
+                     ('New Site', 'New address', 14.0, 121.0, '', '2026-01-01T00:00:00+00:00'))
+        added = [dict(row) for row in conn.execute('SELECT * FROM locations ORDER BY name')]
+    assert module.locations_cache_key(original) != module.locations_cache_key(added)
+    changed = [dict(item) for item in added]
+    changed[0]['latitude'] += 0.1
+    assert module.locations_cache_key(added) != module.locations_cache_key(changed)
+
+
 def test_edit_requires_authentication(tmp_path, monkeypatch):
     module = load(tmp_path, monkeypatch)
     response = module.app.test_client().get('/admin/locations/1/edit')

@@ -10,7 +10,7 @@ A responsive operations dashboard for current conditions and multi-provider fore
 - Five-day forecast for every monitored site
 - 11 preloaded locations from the supplied list
 - Branded favicon and Apple touch icon
-- Automatic refresh every five minutes and visible application version
+- Automatic refresh every five minutes, immediate cross-worker location synchronization, and visible application version
 - Unlinked `/admin` portal
 - One-time administrator registration (closes after the first account)
 - Scrypt password hashing, CSRF protection, secure cookies, security headers, parameterized SQL
