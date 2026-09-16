@@ -4,6 +4,7 @@ const caps = {normal:'Normal',watch:'WeatherWatch',moderate:'Moderate',heavy:'He
 const esc = value => String(value ?? '').replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
 const number = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const dayName = (date, index) => index === 0 ? 'Today' : new Date(`${date}T12:00:00`).toLocaleDateString([], {weekday:'short'});
+['sunny','cloudy','rainy','storm','foggy'].forEach(name => { const image = new Image(); image.src = `/static/weather/${name}.jpg`; });
 
 function forecastHtml(days = []) {
   return `<div class="forecast" aria-label="Five-day forecast">${days.map((day, index) => `

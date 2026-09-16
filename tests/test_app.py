@@ -24,6 +24,8 @@ def test_home_and_seed_data(tmp_path, monkeypatch):
     assert b"Made with" in response.data
     assert b"weather-ambient" in response.data
     assert b"Select a site to reflect its weather" in response.data
+    for scene in ('sunny', 'cloudy', 'rainy', 'storm', 'foggy'):
+        assert (module.BASE_DIR / 'static' / 'weather' / f'{scene}.jpg').is_file()
     assert b"/admin" not in response.data
 
 
