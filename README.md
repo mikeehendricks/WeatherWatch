@@ -5,8 +5,8 @@ A responsive operations dashboard for current conditions and multi-provider fore
 ## Features
 
 - Live dashboard with five-level severity color matrix
-- Multi-provider data from Open-Meteo and MET Norway
-- Safety-first consensus uses the higher rain/wind risk and averages temperatures
+- Direct ECMWF IFS HRES forecasts at native 9 km resolution
+- Five-day coordinate-level forecasts updated from ECMWF's six-hourly model runs
 - Five-day forecast for every monitored site
 - Clickable site cards with condition-aware sunny, cloudy, rainy, foggy, and storm dashboard atmospheres
 - 11 preloaded locations from the supplied list
@@ -38,9 +38,9 @@ The highest category triggered by today's forecast precipitation or maximum wind
 
 The image did not specify numeric thresholds for WeatherWatch, so 1 mm rain / 40 kph gust was selected as the watch floor.
 
-## Weather-source selection
+## Weather source
 
-WeatherWatch retrieves coordinate-level forecasts from both Open-Meteo and the MET Norway Locationforecast API. Because neither provider supplies independent ground-truth observations at every facility, the application does not make an unsupported claim that one is universally more accurate. It uses a safety-first consensus instead: the higher rainfall and wind-gust forecast controls operational severity, while available temperatures are averaged. If MET Norway is unavailable, Open-Meteo remains available automatically. Results are cached for five minutes to respect provider capacity and stale data is retained during short upstream interruptions. Each site card identifies the active source and method.
+WeatherWatch uses the ECMWF Integrated Forecasting System High Resolution Forecast (IFS HRES) at its native 9 km global resolution. Data is requested by exact site coordinates through Open-Meteo's ECMWF delivery API using the explicit `ecmwf_ifs` model selector; Open-Meteo is the transport/API layer, not an additional forecast vote. Results are cached for five minutes, and the last matching-location result remains available during short upstream interruptions. Values are numerical-model forecasts rather than on-site instrument observations.
 
 ## One-command Ubuntu installation
 
