@@ -8,7 +8,7 @@ A responsive operations dashboard for current conditions and multi-provider fore
 - Direct ECMWF IFS HRES forecasts at native 9 km resolution
 - Five-day coordinate-level forecasts updated from ECMWF's six-hourly model runs
 - Five-day forecast for every monitored site
-- Clickable site cards with cinematic, condition-aware sunny, cloudy, rainy, foggy, and storm imagery plus layered weather animation
+- Clickable site cards with distinct cinematic scenes for sunny, partly cloudy, overcast, drizzle, rain, showers, fog, and thunderstorms
 - 11 preloaded locations from the supplied list
 - Branded favicon and Apple touch icon
 - Automatic refresh every five minutes, immediate cross-worker location synchronization, and visible application version

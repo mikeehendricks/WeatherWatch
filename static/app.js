@@ -4,7 +4,7 @@ const caps = {normal:'Normal',watch:'WeatherWatch',moderate:'Moderate',heavy:'He
 const esc = value => String(value ?? '').replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
 const number = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const dayName = (date, index) => index === 0 ? 'Today' : new Date(`${date}T12:00:00`).toLocaleDateString([], {weekday:'short'});
-['sunny','cloudy','rainy','storm','foggy'].forEach(name => { const image = new Image(); image.src = `/static/weather/${name}.jpg`; });
+['sunny','partly-cloudy','overcast','drizzle','rainy','showers','storm','foggy'].forEach(name => { const image = new Image(); image.src = `/static/weather/${name}.jpg`; });
 
 function forecastHtml(days = []) {
   return `<div class="forecast" aria-label="Five-day forecast">${days.map((day, index) => `
@@ -18,9 +18,12 @@ function forecastHtml(days = []) {
 
 function atmosphereFor(code) {
   if ([95,96,99].includes(code)) return 'storm';
-  if ([51,53,55,61,63,65,71,80,81,82].includes(code)) return 'rainy';
+  if ([80,81,82].includes(code)) return 'showers';
+  if ([61,63,65,66,67,71,73,75].includes(code)) return 'rainy';
+  if ([51,53,55,56,57].includes(code)) return 'drizzle';
   if ([45,48].includes(code)) return 'foggy';
-  if ([2,3].includes(code)) return 'cloudy';
+  if (code === 3) return 'overcast';
+  if (code === 2) return 'partly-cloudy';
   return 'sunny';
 }
 
