@@ -30,6 +30,8 @@ def test_home_and_seed_data(tmp_path, monkeypatch):
     assert b"hourly outlook" in response.data
     css = client.get('/static/style.css').get_data(as_text=True)
     assert '.forecast-day{appearance:none;display:block' in css
+    assert 'grid-template-columns:52px minmax(0,1fr) 52px' in css
+    assert 'justify-self:center' in css
     assert '@keyframes hourly-enter' in css
     javascript = client.get('/static/app.js').get_data(as_text=True)
     assert "if (wasSelected)" in javascript
