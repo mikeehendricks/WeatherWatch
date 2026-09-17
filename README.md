@@ -17,6 +17,7 @@ A responsive operations dashboard for current conditions and multi-provider fore
 - One-time administrator registration (closes after the first account)
 - Scrypt password hashing, CSRF protection, secure cookies, security headers, parameterized SQL
 - Add, edit, and delete locations
+- Admin-configurable weather severity matrix with immediate forecast recalculation
 - Admin-only active visitor view with IP and ISP information
 - Date/time-filtered visitor-event export to CSV
 - Automatic visitor-data retention (30 days by default)
@@ -37,7 +38,7 @@ The highest category triggered by today's forecast precipitation or maximum wind
 | Heavy / Strong | Rain 50–100 mm or gust 100–130 kph |
 | Extreme | Rain >100 mm or gust >130 kph |
 
-The image did not specify numeric thresholds for WeatherWatch, so 1 mm rain / 40 kph gust was selected as the watch floor.
+The initial values follow the supplied matrix, with 0.1 mm rain / 40 kph gust as the WeatherWatch floor. Administrators can recalibrate all rain and gust thresholds from `/admin`; values are validated as strictly increasing and forecast colors refresh immediately across Gunicorn workers.
 
 ## Weather source
 

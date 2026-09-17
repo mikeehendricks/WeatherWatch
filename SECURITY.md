@@ -33,7 +33,7 @@ The application was reviewed for OWASP-style web risks, deployment weaknesses, d
 - Scrypt password hashing
 - Session rotation after authentication, HttpOnly/SameSite/Secure cookie options, and 30-minute lifetime
 - CSRF tokens on every state-changing request
-- Parameterized SQL, server-side coordinate/length validation, and authorization checks on location edits
+- Parameterized SQL, server-side coordinate/length validation, authorization checks on location edits, and strictly ordered bounds checking for severity calibration
 - Strict CSP, anti-framing, MIME-sniffing prevention, referrer and permissions policies, and HSTS over HTTPS
 - Unprivileged systemd service with filesystem sandboxing
 - Fast-forward-only updater with fixed command arguments, explicit opt-in, atomic recovery metadata, and rollback restricted to the recorded ancestor commit

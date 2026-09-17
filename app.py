@@ -110,7 +110,21 @@ def init_db():
                 visited_at TEXT NOT NULL, user_agent TEXT NOT NULL DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS visitor_events_time ON visitor_events(visited_at);
+            CREATE TABLE IF NOT EXISTS severity_settings (
+                id INTEGER PRIMARY KEY CHECK(id=1),
+                watch_rain REAL NOT NULL, watch_gust REAL NOT NULL,
+                moderate_rain REAL NOT NULL, moderate_gust REAL NOT NULL,
+                heavy_rain REAL NOT NULL, heavy_gust REAL NOT NULL,
+                extreme_rain REAL NOT NULL, extreme_gust REAL NOT NULL,
+                updated_at TEXT NOT NULL
+            );
         """)
+        conn.execute("""
+            INSERT OR IGNORE INTO severity_settings(
+                id,watch_rain,watch_gust,moderate_rain,moderate_gust,
+                heavy_rain,heavy_gust,extreme_rain,extreme_gust,updated_at
+            ) VALUES(1,0.1,40,30,75,50,100,100,130,?)
+        """, (datetime.now(timezone.utc).isoformat(),))
         if conn.execute("SELECT COUNT(*) FROM locations").fetchone()[0] == 0:
             now = datetime.now(timezone.utc).isoformat()
             conn.executemany("INSERT INTO locations(name,address,latitude,longitude,plus_code,created_at) VALUES(?,?,?,?,?,?)", [(*x, now) for x in SEED_LOCATIONS])
@@ -267,6 +281,12 @@ def version_at_commit(commit):
         return "unknown"
 
 
+def get_severity_settings():
+    with db() as conn:
+        row = conn.execute("SELECT * FROM severity_settings WHERE id=1").fetchone()
+    return dict(row)
+
+
 def request_graceful_reload():
     parent_pid = os.getppid()
     cmdline = Path(f"/proc/{parent_pid}/cmdline").read_bytes().replace(b"\0", b" ").decode("utf-8", "replace")
@@ -279,7 +299,10 @@ def request_graceful_reload():
 def index():
     with db() as conn:
         locations = [dict(r) for r in conn.execute("SELECT * FROM locations ORDER BY name")]
-    return render_template("index.html", locations=locations, retention_days=VISITOR_RETENTION_DAYS)
+    return render_template(
+        "index.html", locations=locations, retention_days=VISITOR_RETENTION_DAYS,
+        severity=get_severity_settings(),
+    )
 
 
 @app.post("/api/visitor-heartbeat")
@@ -358,7 +381,12 @@ def weather():
     # made through another Gunicorn worker become visible immediately.
     with db() as conn:
         locations = [dict(r) for r in conn.execute("SELECT * FROM locations ORDER BY name")]
-    location_key = locations_cache_key(locations)
+    thresholds = get_severity_settings()
+    threshold_key = tuple(thresholds[key] for key in (
+        "watch_rain", "watch_gust", "moderate_rain", "moderate_gust",
+        "heavy_rain", "heavy_gust", "extreme_rain", "extreme_gust",
+    ))
+    location_key = (locations_cache_key(locations), threshold_key)
     now = time.monotonic()
     with WEATHER_CACHE_LOCK:
         if (
@@ -407,7 +435,7 @@ def weather():
                     "weather_code": (daily.get("weather_code") or [0] * 5)[i],
                     "temperature_max": (daily.get("temperature_2m_max") or [None] * 5)[i],
                     "temperature_min": (daily.get("temperature_2m_min") or [None] * 5)[i],
-                    "rain": rain, "gust": gust, "severity": classify(rain, gust),
+                    "rain": rain, "gust": gust, "severity": classify(rain, gust, thresholds),
                 })
             first = days[0] if days else {"rain": 0, "gust": 0, "severity": "normal"}
             hourly = model_forecast.get("hourly", {})
@@ -439,11 +467,12 @@ def weather():
         return jsonify({"error": "ECMWF weather data is temporarily unavailable."}), 503
 
 
-def classify(rain, gust):
-    if rain > 100 or gust > 130: return "extreme"
-    if rain >= 50 or gust >= 100: return "heavy"
-    if rain >= 30 or gust >= 75: return "moderate"
-    if rain > 0 or gust >= 40: return "watch"
+def classify(rain, gust, thresholds=None):
+    thresholds = thresholds or get_severity_settings()
+    if rain > thresholds["extreme_rain"] or gust > thresholds["extreme_gust"]: return "extreme"
+    if rain >= thresholds["heavy_rain"] or gust >= thresholds["heavy_gust"]: return "heavy"
+    if rain >= thresholds["moderate_rain"] or gust >= thresholds["moderate_gust"]: return "moderate"
+    if rain >= thresholds["watch_rain"] or gust >= thresholds["watch_gust"]: return "watch"
     return "normal"
 
 
@@ -545,7 +574,39 @@ def admin_dashboard():
         "admin/dashboard.html", locations=locations, visitors=visitors,
         visitor_total=visitor_total, retention_days=VISITOR_RETENTION_DAYS,
         update_state=update_state, rollback_available=rollback_available,
+        severity=get_severity_settings(),
     )
+
+
+@app.post("/admin/severity")
+@admin_required
+def severity_update():
+    fields = (
+        "watch_rain", "watch_gust", "moderate_rain", "moderate_gust",
+        "heavy_rain", "heavy_gust", "extreme_rain", "extreme_gust",
+    )
+    try:
+        values = {field: float(request.form[field]) for field in fields}
+        rain = [values[f"{level}_rain"] for level in ("watch", "moderate", "heavy", "extreme")]
+        gust = [values[f"{level}_gust"] for level in ("watch", "moderate", "heavy", "extreme")]
+        if rain[0] < 0 or gust[0] < 0 or rain[-1] > 1000 or gust[-1] > 500:
+            raise ValueError
+        if not all(left < right for left, right in zip(rain, rain[1:])):
+            raise ValueError
+        if not all(left < right for left, right in zip(gust, gust[1:])):
+            raise ValueError
+        with db() as conn:
+            conn.execute("""
+                UPDATE severity_settings SET watch_rain=?,watch_gust=?,
+                moderate_rain=?,moderate_gust=?,heavy_rain=?,heavy_gust=?,
+                extreme_rain=?,extreme_gust=?,updated_at=? WHERE id=1
+            """, tuple(values[field] for field in fields) + (datetime.now(timezone.utc).isoformat(),))
+        with WEATHER_CACHE_LOCK:
+            WEATHER_CACHE.update(payload=None, expires=0.0)
+        flash("Weather severity matrix recalibrated. Forecast colors have been refreshed.", "success")
+    except (ValueError, KeyError):
+        flash("Thresholds must be valid, strictly increasing numbers.", "error")
+    return redirect(url_for("admin_dashboard"))
 
 
 @app.post("/admin/locations")
