@@ -12,7 +12,7 @@ function forecastHtml(days = []) {
       <span>${esc(dayName(day.date, index))}</span>
       <span class="forecast-symbol" aria-label="${esc(labels[day.weather_code] || 'Weather')}">${glyphs[day.weather_code] || '◌'}</span>
       <b>${Math.round(number(day.temperature_max))}° <small>${Math.round(number(day.temperature_min))}°</small></b>
-      <em title="ECMWF daily forecast rainfall total"><i class="${esc(day.severity)}"></i>${number(day.rain).toFixed(1)} mm</em><small class="forecast-caption">daily forecast · view hours</small>
+      <em title="ECMWF daily forecast rainfall total"><i class="${esc(day.severity)}"></i>${number(day.rain).toFixed(1)} mm</em><small class="forecast-caption">View hourly forecast</small>
     </button>`).join('')}</div>`;
 }
 

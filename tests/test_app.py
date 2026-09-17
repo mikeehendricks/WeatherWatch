@@ -26,6 +26,8 @@ def test_home_and_seed_data(tmp_path, monkeypatch):
     assert b"Forecast, not an on-site observation" in response.data
     assert b"Modeled current conditions" in response.data
     assert b"hourly outlook" in response.data
+    css = client.get('/static/style.css').get_data(as_text=True)
+    assert '.forecast-day{appearance:none;display:block' in css
     assert b"Select a site to reflect its weather" in response.data
     assert b"Checking radar" in response.data
     assert b"Light" in response.data and b"Heavy" in response.data
