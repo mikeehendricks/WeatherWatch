@@ -22,7 +22,7 @@
     </section>
     <section class="radar-panel" id="radar-panel" aria-labelledby="radar-title">
       <div class="radar-copy"><p class="section-label">Rain timeline</p><h2 id="radar-title">Three-hour rain view</h2><p id="radar-description">Select a site to play the last two hours of observed radar and see its next-hour ECMWF rain forecast.</p><div class="radar-controls"><button type="button" id="radar-play" disabled><span aria-hidden="true">▶</span> Play</button><input id="radar-slider" type="range" min="0" max="0" value="0" disabled aria-label="Radar timeline"><time id="radar-time">Select a site</time></div><p class="radar-forecast" id="radar-forecast">Next-hour forecast will appear here.</p><a class="radar-credit" href="https://www.rainviewer.com/" target="_blank" rel="noopener noreferrer">Radar data by RainViewer</a></div>
-      <div class="radar-stage" id="radar-stage"><div id="radar-map" aria-label="Interactive map with observed rain radar"></div><div class="radar-placeholder"><span aria-hidden="true">◎</span><b>No site selected</b><small>Choose any weather card below.</small></div></div>
+      <div class="radar-stage" id="radar-stage"><div id="radar-map" aria-label="Interactive map with observed rain radar"></div><div class="radar-status" id="radar-status" hidden><i></i><span>Checking radar…</span></div><div class="radar-legend" hidden><span>Light</span><i></i><span>Heavy</span></div><div class="radar-placeholder"><span aria-hidden="true">◎</span><b>No site selected</b><small>Choose any weather card below.</small></div></div>
     </section>
     <div id="notice" class="notice" role="status" hidden></div>
     <section id="grid" class="weather-grid" aria-label="Site weather conditions" aria-live="polite">
