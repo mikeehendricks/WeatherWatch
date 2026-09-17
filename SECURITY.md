@@ -37,7 +37,7 @@ The application was reviewed for OWASP-style web risks, deployment weaknesses, d
 - Parameterized SQL, server-side coordinate/length validation, authorization checks on location edits, and strictly ordered bounds checking for severity calibration
 - Strict CSP, anti-framing, MIME-sniffing prevention, referrer and permissions policies, and HSTS over HTTPS
 - Unprivileged systemd service with filesystem sandboxing
-- Fast-forward-only updater with fixed command arguments, explicit opt-in, atomic recovery metadata, and rollback restricted to the recorded ancestor commit
+- Fast-forward-only updater with fixed command arguments, explicit opt-in, atomic recovery metadata, cross-worker update locking, authenticated status polling, and rollback restricted to the recorded ancestor commit
 - No GitHub token or weather API secret stored in source
 
 ### Operational considerations

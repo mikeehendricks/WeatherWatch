@@ -27,6 +27,7 @@ DATA_DIR = Path(os.getenv("WEATHERWATCH_DATA_DIR", BASE_DIR / "data"))
 DB_PATH = DATA_DIR / "weatherwatch.db"
 VERSION_FILE = BASE_DIR / "VERSION"
 UPDATE_STATE_FILE = DATA_DIR / "update-state.json"
+UPDATE_LOCK_FILE = DATA_DIR / "update.lock"
 APP_VERSION = VERSION_FILE.read_text(encoding="utf-8").strip() if VERSION_FILE.exists() else "dev"
 DUMMY_PASSWORD_HASH = "scrypt:32768:8:1$0ZQlMO29KrbGTodV$15ff43ebbcff60f820f090a9f02af5a33682d757db92ad1c584581819183a210c3271ad9d8ea45df68deeed3b5fb1976a1a85b4bef17bd37b9f727588193330e"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -750,57 +751,110 @@ def visitor_export():
     )
 
 
+def acquire_update_lock():
+    try:
+        descriptor = os.open(UPDATE_LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError:
+        try:
+            # Recover automatically if a worker or server stopped mid-update.
+            if time.time() - UPDATE_LOCK_FILE.stat().st_mtime <= 600:
+                return False
+            UPDATE_LOCK_FILE.unlink()
+            descriptor = os.open(UPDATE_LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except (FileExistsError, FileNotFoundError, OSError):
+            return False
+    os.write(descriptor, str(os.getpid()).encode())
+    os.close(descriptor)
+    return True
+
+
+def run_system_update():
+    state = load_update_state()
+    try:
+        state.update(status="updating", phase="Checking local files")
+        save_update_state(state)
+        # Never overwrite local administrator changes or accept rewritten history.
+        update_command(["git", "diff", "--quiet"])
+        update_command(["git", "diff", "--cached", "--quiet"])
+        before = update_command(["git", "rev-parse", "HEAD"], 10).stdout.strip()
+        state.update(phase="Downloading repository update", previous_commit=before,
+                     previous_version=version_at_commit(before))
+        save_update_state(state)
+        update_command(["git", "fetch", "--prune", "origin"])
+        state.update(phase="Installing source update")
+        save_update_state(state)
+        update_command(["git", "merge", "--ff-only", "origin/main"])
+        after = update_command(["git", "rev-parse", "HEAD"], 10).stdout.strip()
+
+        if before == after:
+            state.update(status="up_to_date", phase="Already up to date",
+                         updated_version=version_at_commit(after),
+                         finished_at=datetime.now(timezone.utc).isoformat())
+            save_update_state(state)
+            return
+
+        state.update(updated_commit=after, updated_version=version_at_commit(after),
+                     phase="Installing dependencies")
+        # Record the rollback commit before dependency installation.
+        save_update_state(state)
+        update_command([
+            str(BASE_DIR / ".venv" / "bin" / "pip"), "install",
+            "--requirement", str(BASE_DIR / "requirements.txt")
+        ], 180)
+        state.update(status="updated", phase="Update complete",
+                     updated_at=datetime.now(timezone.utc).isoformat(),
+                     finished_at=datetime.now(timezone.utc).isoformat())
+        save_update_state(state)
+        request_graceful_reload()
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or "unknown command error").strip().splitlines()[-1][:240]
+        app.logger.error("Update command failed (%s): %s", exc.cmd, detail)
+        state.update(status="failed", phase="Update failed", error=detail,
+                     failed_at=datetime.now(timezone.utc).isoformat(),
+                     finished_at=datetime.now(timezone.utc).isoformat())
+        save_update_state(state)
+    except (subprocess.SubprocessError, OSError, RuntimeError) as exc:
+        app.logger.error("Update failed: %s", exc)
+        state.update(status="failed", phase="Update failed", error=str(exc)[:240],
+                     failed_at=datetime.now(timezone.utc).isoformat(),
+                     finished_at=datetime.now(timezone.utc).isoformat())
+        save_update_state(state)
+    finally:
+        try: UPDATE_LOCK_FILE.unlink()
+        except FileNotFoundError: pass
+
+
 @app.post("/admin/update")
 @admin_required
 def system_update():
     if os.getenv("ENABLE_WEB_UPDATES", "0") != "1":
         flash("Web updates are disabled. Set ENABLE_WEB_UPDATES=1 to enable them.", "error")
         return redirect(url_for("admin_dashboard"))
-    state = {}
-    try:
-        # Never overwrite local administrator changes or accept rewritten history.
-        update_command(["git", "diff", "--quiet"])
-        update_command(["git", "diff", "--cached", "--quiet"])
-        before = update_command(["git", "rev-parse", "HEAD"], 10).stdout.strip()
-        update_command(["git", "fetch", "--prune", "origin"])
-        update_command(["git", "merge", "--ff-only", "origin/main"])
-        after = update_command(["git", "rev-parse", "HEAD"], 10).stdout.strip()
-
-        if before == after:
-            flash(f"Already up to date (version {APP_VERSION}).", "success")
-        else:
-            state = {
-                "status": "updated", "previous_commit": before,
-                "previous_version": version_at_commit(before),
-                "updated_commit": after, "updated_version": version_at_commit(after),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }
-            # Save the known-good commit before dependency installation, ensuring
-            # rollback remains available even when installation or reload fails.
-            save_update_state(state)
-            update_command([
-                str(BASE_DIR / ".venv" / "bin" / "pip"), "install",
-                "--requirement", str(BASE_DIR / "requirements.txt")
-            ], 180)
-            request_graceful_reload()
-            flash(
-                f"Updated {before[:7]} → {after[:7]}. WeatherWatch is reloading automatically; "
-                "the previous version remains available for rollback.", "success"
-            )
-    except subprocess.CalledProcessError as exc:
-        detail = (exc.stderr or exc.stdout or "unknown command error").strip().splitlines()[-1][:240]
-        app.logger.error("Update command failed (%s): %s", exc.cmd, detail)
-        if state:
-            state.update(status="failed", error=detail, failed_at=datetime.now(timezone.utc).isoformat())
-            save_update_state(state)
-        flash(f"Update failed: {detail}. Use Roll back if an update was downloaded.", "error")
-    except (subprocess.SubprocessError, OSError, RuntimeError) as exc:
-        app.logger.error("Update failed: %s", exc)
-        if state:
-            state.update(status="failed", error=str(exc)[:240], failed_at=datetime.now(timezone.utc).isoformat())
-            save_update_state(state)
-        flash("Update failed. Use Roll back if an update was downloaded, or check the service log.", "error")
+    if not acquire_update_lock():
+        flash("A repository update is already in progress.", "success")
+        return redirect(url_for("admin_dashboard"))
+    state = load_update_state()
+    for stale_key in ("error", "failed_at", "finished_at"):
+        state.pop(stale_key, None)
+    state.update(status="updating", phase="Starting update",
+                 started_at=datetime.now(timezone.utc).isoformat())
+    save_update_state(state)
+    threading.Thread(target=run_system_update, name="weatherwatch-update", daemon=True).start()
     return redirect(url_for("admin_dashboard"))
+
+
+@app.get("/admin/update-status")
+@admin_required
+def system_update_status():
+    state = load_update_state()
+    return jsonify({
+        "status": state.get("status", "idle"),
+        "phase": state.get("phase", "No update running"),
+        "started_at": state.get("started_at"),
+        "finished_at": state.get("finished_at"),
+        "updated_version": state.get("updated_version"),
+        "error": state.get("error"),
+    })
 
 
 @app.post("/admin/rollback")

@@ -111,14 +111,19 @@ function stopRadar() {
   if (radarTimer) clearInterval(radarTimer);
   radarTimer = null;
   const button = document.querySelector('#radar-play');
-  button.innerHTML = '<span aria-hidden="true">▶</span> Play';
+  button.innerHTML = '<span aria-hidden="true">▶</span>';
+  button.setAttribute('aria-label', 'Play radar timeline');
+  button.title = 'Play';
 }
 
 function playRadar() {
   if (!radarFrames.length) return;
   if (radarTimer) { stopRadar(); return; }
   const slider = document.querySelector('#radar-slider');
-  document.querySelector('#radar-play').innerHTML = '<span aria-hidden="true">Ⅱ</span> Pause';
+  const button = document.querySelector('#radar-play');
+  button.innerHTML = '<span aria-hidden="true">Ⅱ</span>';
+  button.setAttribute('aria-label', 'Pause radar timeline');
+  button.title = 'Pause';
   radarTimer = setInterval(() => showRadarFrame((Number(slider.value) + 1) % radarFrames.length), 850);
 }
 
@@ -290,6 +295,21 @@ async function heartbeat() {
 
 document.querySelector('#radar-play')?.addEventListener('click', playRadar);
 document.querySelector('#radar-slider')?.addEventListener('input', event => { stopRadar(); showRadarFrame(Number(event.target.value)); });
+document.querySelector('#radar-fullscreen')?.addEventListener('click', async () => {
+  const stage = document.querySelector('#radar-stage');
+  try {
+    if (document.fullscreenElement === stage) await document.exitFullscreen();
+    else await stage.requestFullscreen();
+  } catch (_) { /* Browser may deny full screen outside a direct user gesture. */ }
+});
+document.addEventListener('fullscreenchange', () => {
+  const button = document.querySelector('#radar-fullscreen');
+  const active = document.fullscreenElement === document.querySelector('#radar-stage');
+  button.innerHTML = `<span aria-hidden="true">${active ? '×' : '⛶'}</span>`;
+  button.setAttribute('aria-label', active ? 'Exit full screen map' : 'Enter full screen map');
+  button.title = active ? 'Exit full screen' : 'Full screen';
+  setTimeout(() => radarMap?.invalidateSize(), 50);
+});
 
 load();
 setInterval(load, 300000);

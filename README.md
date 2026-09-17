@@ -9,7 +9,7 @@ A responsive operations dashboard for current conditions and multi-provider fore
 - Explicit modeled-versus-observed labeling throughout the dashboard
 - Animated interactive five-day forecast cards: select a day to correlate it with that site's hourly weather, or select the same day again to collapse the hourly panel
 - Five-day coordinate-level forecasts updated from ECMWF's six-hourly model runs
-- Interactive three-hour rain timeline: two hours of observed RainViewer radar plus the next-hour ECMWF precipitation forecast
+- Interactive three-hour rain timeline with full-screen map, integrated scrubber, icon-only playback control, two hours of observed RainViewer radar, and the next-hour ECMWF precipitation forecast
 - Five-day forecast for every monitored site
 - Clickable site cards with distinct cinematic scenes for sunny, partly cloudy, overcast, drizzle, rain, showers, fog, and thunderstorms
 - 11 preloaded locations from the supplied list
@@ -23,7 +23,7 @@ A responsive operations dashboard for current conditions and multi-provider fore
 - Admin-only active visitor view with IP and ISP information
 - Date/time-filtered visitor-event export to CSV
 - Automatic visitor-data retention (30 days by default)
-- Authenticated, fast-forward-only Git updater with automatic dependency installation
+- Authenticated, fast-forward-only Git updater with live progress, automatic dependency installation, and automatic admin-page refresh
 - One-click rollback to the exact version active before the last update
 - SQLite persistence outside the source tree
 - Gunicorn + nginx + systemd production setup
@@ -76,7 +76,7 @@ Visit `/admin` once to create the sole administrator. Registration is unavailabl
 
 ## Web updater
 
-The updater checks for a clean working tree, fetches `origin/main`, performs a **fast-forward-only** merge, installs pinned Python dependencies, and gracefully reloads Gunicorn so the new version starts automatically. Enable only after deployment is working:
+The updater runs in the background, reports each phase live in the admin portal, checks for a clean working tree, fetches `origin/main`, performs a **fast-forward-only** merge, installs pinned Python dependencies, and gracefully reloads Gunicorn. The admin page refreshes automatically when the operation finishes. Enable only after deployment is working:
 
 1. Ensure the `weatherwatch` service user can read the repository and authenticate to a private remote (a read-only deploy key is preferred).
 2. Set `ENABLE_WEB_UPDATES=1` in `/etc/weatherwatch.env`.
