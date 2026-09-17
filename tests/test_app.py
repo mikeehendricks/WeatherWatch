@@ -23,6 +23,8 @@ def test_home_and_seed_data(tmp_path, monkeypatch):
     assert b"Therma South Inc" in response.data
     assert b"Made with" in response.data
     assert b"weather-ambient" in response.data
+    assert b"Forecast, not an on-site observation" in response.data
+    assert b"Modeled current conditions" in response.data
     assert b"Select a site to reflect its weather" in response.data
     assert b"Checking radar" in response.data
     assert b"Light" in response.data and b"Heavy" in response.data
