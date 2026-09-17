@@ -462,8 +462,6 @@ def weather():
                     "wind_speed": hourly_value("wind_speed_10m"),
                     "wind_gust": hourly_value("wind_gusts_10m"),
                 })
-                if len(hourly_forecast) == 24:
-                    break
             next_hour_rain = 0.0
             for stamp, amount in zip(hourly_times, hourly.get("precipitation", [])):
                 if stamp > current_time:

@@ -51,7 +51,7 @@ def test_weather_uses_explicit_ecmwf_ifs_hres(tmp_path, monkeypatch):
     assert data['matrix_updated_at']
     assert 'no-store' in response.headers['Cache-Control']
     assert all(len(item['forecast']) == 5 for item in data['locations'])
-    assert all(len(item['hourly_forecast']) == 24 for item in data['locations'])
+    assert all(len(item['hourly_forecast']) == 27 for item in data['locations'])
     first_hour = data['locations'][0]['hourly_forecast'][0]
     assert first_hour['time'] == '2026-09-09T03:00'
     assert first_hour['precipitation_probability'] == 40

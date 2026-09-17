@@ -8,34 +8,37 @@ const dayName = (date, index) => index === 0 ? 'Today' : new Date(`${date}T12:00
 
 function forecastHtml(days = []) {
   return `<div class="forecast" aria-label="Five-day forecast">${days.map((day, index) => `
-    <div class="forecast-day">
+    <button type="button" class="forecast-day" data-forecast-date="${esc(day.date)}" aria-pressed="false" title="Show hourly forecast for ${esc(dayName(day.date, index))}">
       <span>${esc(dayName(day.date, index))}</span>
-      <div class="forecast-symbol" aria-label="${esc(labels[day.weather_code] || 'Weather')}">${glyphs[day.weather_code] || '◌'}</div>
+      <span class="forecast-symbol" aria-label="${esc(labels[day.weather_code] || 'Weather')}">${glyphs[day.weather_code] || '◌'}</span>
       <b>${Math.round(number(day.temperature_max))}° <small>${Math.round(number(day.temperature_min))}°</small></b>
-      <em title="ECMWF daily forecast rainfall total"><i class="${esc(day.severity)}"></i>${number(day.rain).toFixed(1)} mm</em><small class="forecast-caption">daily forecast</small>
-    </div>`).join('')}</div>`;
+      <em title="ECMWF daily forecast rainfall total"><i class="${esc(day.severity)}"></i>${number(day.rain).toFixed(1)} mm</em><small class="forecast-caption">daily forecast · view hours</small>
+    </button>`).join('')}</div>`;
+}
+
+function hourlyItemsHtml(hours = [], markNow = false) {
+  return hours.map((hour, index) => {
+    const date = new Date(hour.time);
+    const time = markNow && index === 0 ? 'Now' : date.toLocaleTimeString([], {hour:'numeric'});
+    const code = number(hour.weather_code);
+    return `<div class="hour-item">
+      <time datetime="${esc(hour.time)}">${esc(time)}</time>
+      <span class="hour-glyph" title="${esc(labels[code] || 'Weather')}">${glyphs[code] || '◌'}</span>
+      <b>${Math.round(number(hour.temperature))}°</b>
+      <small>Feels ${Math.round(number(hour.apparent_temperature))}°</small>
+      <span class="hour-rain" title="Forecast precipitation probability and amount">☂ ${Math.round(number(hour.precipitation_probability))}%</span>
+      <small>${number(hour.precipitation).toFixed(1)} mm</small>
+      <small title="Forecast wind gust">Gust ${Math.round(number(hour.wind_gust))} kph</small>
+    </div>`;
+  }).join('');
 }
 
 function hourlyHtml(hours = []) {
   if (!hours.length) return '';
   return `<details class="hourly-panel">
-    <summary><span><b>Next 24 hours</b><small>ECMWF hourly forecast · Philippine time</small></span><i aria-hidden="true">⌄</i></summary>
+    <summary><span><b class="hourly-title">Next 24 hours</b><small>ECMWF hourly forecast · Philippine time</small></span><i aria-hidden="true">⌄</i></summary>
     <div class="hourly-scroll" tabindex="0" aria-label="Scrollable 24-hour weather forecast">
-      ${hours.map((hour, index) => {
-        const date = new Date(hour.time);
-        const time = date.toLocaleTimeString([], {hour:'numeric'});
-        const day = index === 0 ? 'Now' : (date.getHours() === 0 ? date.toLocaleDateString([], {weekday:'short'}) : time);
-        const code = number(hour.weather_code);
-        return `<div class="hour-item">
-          <time datetime="${esc(hour.time)}">${esc(day)}</time>
-          <span class="hour-glyph" title="${esc(labels[code] || 'Weather')}">${glyphs[code] || '◌'}</span>
-          <b>${Math.round(number(hour.temperature))}°</b>
-          <small>Feels ${Math.round(number(hour.apparent_temperature))}°</small>
-          <span class="hour-rain" title="Forecast precipitation probability and amount">☂ ${Math.round(number(hour.precipitation_probability))}%</span>
-          <small>${number(hour.precipitation).toFixed(1)} mm</small>
-          <small title="Forecast wind gust">Gust ${Math.round(number(hour.wind_gust))} kph</small>
-        </div>`;
-      }).join('')}
+      ${hourlyItemsHtml(hours.slice(0, 24), true)}
     </div>
   </details>`;
 }
@@ -177,10 +180,34 @@ function selectSite(card) {
   card.scrollIntoView({behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block:'nearest'});
 }
 
+let latestLocations = [];
+
+function bindForecastDays() {
+  document.querySelectorAll('.forecast-day[data-forecast-date]').forEach(button => {
+    button.addEventListener('click', event => {
+      event.stopPropagation();
+      const card = button.closest('.weather-card');
+      const location = latestLocations.find(item => Number(item.id) === Number(card?.dataset.locationId));
+      const panel = card?.querySelector('.hourly-panel');
+      if (!location || !panel) return;
+      const date = button.dataset.forecastDate;
+      const hours = (location.hourly_forecast || []).filter(hour => String(hour.time).startsWith(date));
+      card.querySelectorAll('.forecast-day').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+      const label = button.querySelector(':scope > span')?.textContent || date;
+      panel.querySelector('.hourly-title').textContent = `${label} hourly forecast`;
+      panel.querySelector('.hourly-scroll').innerHTML = hours.length
+        ? hourlyItemsHtml(hours, date === String(location.current?.time || '').slice(0, 10))
+        : '<p class="hourly-empty">Hourly forecast is unavailable for this day.</p>';
+      panel.open = true;
+      panel.scrollIntoView({behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block:'nearest'});
+    });
+  });
+}
+
 function bindSiteScenes() {
   const cards = [...document.querySelectorAll('.weather-card[data-weather-code]')];
   cards.forEach(card => {
-    card.addEventListener('click', () => selectSite(card));
+    card.addEventListener('click', event => { if (!event.target.closest('button,details,summary,.hourly-scroll')) selectSite(card); });
     card.addEventListener('keydown', event => {
       if (event.target.closest('details,summary,.hourly-scroll')) return;
       if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectSite(card); }
@@ -199,6 +226,7 @@ async function load() {
     const response = await fetch(`/api/weather?refresh=${Date.now()}`, {headers:{Accept:'application/json'}, cache:'no-store'});
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Could not load weather.');
+    latestLocations = data.locations;
     document.querySelector('#grid').innerHTML = data.locations.map(location => {
       const code = location.current.weather_code;
       return `<article class="weather-card severity-${esc(location.severity)}" role="button" tabindex="0" aria-pressed="false" data-weather-code="${number(code)}" data-location-id="${number(location.id)}" data-next-hour-rain="${number(location.next_hour_rain)}" data-site-name="${esc(location.name)}" aria-label="Show ${esc(labels[code] || 'weather')} atmosphere for ${esc(location.name)}">
@@ -219,6 +247,7 @@ async function load() {
       </article>`;
     }).join('');
     bindSiteScenes();
+    bindForecastDays();
     document.querySelector('#updated').textContent = `${data.stale ? 'Last available update' : 'Updated'} ${new Date(data.updated_at).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}`;
     notice.hidden = true;
   } catch (error) {
