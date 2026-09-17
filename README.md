@@ -7,7 +7,7 @@ A responsive operations dashboard for current conditions and multi-provider fore
 - Live dashboard with five-level severity color matrix
 - Direct ECMWF IFS HRES forecasts at native 9 km resolution
 - Explicit modeled-versus-observed labeling throughout the dashboard
-- Animated interactive five-day forecast cards: select a day to correlate it with that site's hourly weather, or select the same day again to collapse the hourly panel
+- Lazy-rendered hourly forecasts and on-demand future-day retrieval: select a day to correlate it with that site's hourly weather, or select the same day again to collapse the panel
 - Five-day coordinate-level forecasts updated from ECMWF's six-hourly model runs
 - Interactive three-hour rain timeline with full-screen map, centered scrubber, large media-style SVG play/pause control, two hours of observed RainViewer radar, and the next-hour ECMWF precipitation forecast
 - Five-day forecast for every monitored site

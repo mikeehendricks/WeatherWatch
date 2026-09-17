@@ -51,6 +51,10 @@ WEATHER_CACHE = {"expires": 0.0, "payload": None, "location_key": None}
 WEATHER_CACHE_LOCK = threading.Lock()
 RADAR_CACHE = {"expires": 0.0, "host": "", "frames": []}
 RADAR_CACHE_LOCK = threading.Lock()
+HOURLY_DAY_CACHE = {}
+HOURLY_DAY_CACHE_LOCK = threading.Lock()
+VISITOR_CLEANUP_LOCK = threading.Lock()
+VISITOR_CLEANUP = {"next": 0.0}
 VISITOR_LOOKUPS = set()
 VISITOR_LOOKUPS_LOCK = threading.Lock()
 MANILA_TZ = ZoneInfo("Asia/Manila")
@@ -182,11 +186,17 @@ def record_visitor():
         return
     ip = visitor_ip()
     now = datetime.now(timezone.utc).isoformat()
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=VISITOR_RETENTION_DAYS)).isoformat()
     agent = request.headers.get("User-Agent", "")[:300]
+    cleanup_due = False
+    with VISITOR_CLEANUP_LOCK:
+        if time.monotonic() >= VISITOR_CLEANUP["next"]:
+            VISITOR_CLEANUP["next"] = time.monotonic() + 3600
+            cleanup_due = True
     with db() as conn:
-        conn.execute("DELETE FROM visitors WHERE last_seen < ?", (cutoff,))
-        conn.execute("DELETE FROM visitor_events WHERE visited_at < ?", (cutoff,))
+        if cleanup_due:
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=VISITOR_RETENTION_DAYS)).isoformat()
+            conn.execute("DELETE FROM visitors WHERE last_seen < ?", (cutoff,))
+            conn.execute("DELETE FROM visitor_events WHERE visited_at < ?", (cutoff,))
         conn.execute("INSERT INTO visitor_events(ip, visited_at, user_agent) VALUES(?,?,?)", (ip, now, agent))
         conn.execute("""
             INSERT INTO visitors(ip, first_seen, last_seen, request_count, user_agent)
@@ -471,7 +481,7 @@ def weather():
             result.append({
                 **loc, "current": current, "rain": first["rain"], "gust": first["gust"],
                 "severity": first["severity"], "severity_reason": severity_reason, "forecast": days,
-                "next_hour_rain": next_hour_rain, "hourly_forecast": hourly_forecast,
+                "next_hour_rain": next_hour_rain, "hourly_forecast": hourly_forecast[:24],
                 "source": "ECMWF IFS HRES 9 km", "selection": "Direct ECMWF model",
             })
         payload = {
@@ -489,6 +499,62 @@ def weather():
         if stale is not None:
             return jsonify({**stale, "stale": True})
         return jsonify({"error": "ECMWF weather data is temporarily unavailable."}), 503
+
+
+@app.get("/api/hourly/<int:location_id>")
+def hourly_day(location_id):
+    requested = request.args.get("date", "")
+    try:
+        forecast_date = datetime.strptime(requested, "%Y-%m-%d").date()
+    except ValueError:
+        return jsonify({"error": "A valid forecast date is required."}), 400
+    today = datetime.now(ZoneInfo("Asia/Manila")).date()
+    if forecast_date < today or forecast_date > today + timedelta(days=4):
+        return jsonify({"error": "Hourly forecasts are available for the next five days."}), 400
+    with db() as conn:
+        location = conn.execute("SELECT id,latitude,longitude FROM locations WHERE id=?", (location_id,)).fetchone()
+    if not location:
+        return jsonify({"error": "Unknown location."}), 404
+    cache_key = (location_id, requested)
+    now = time.monotonic()
+    with HOURLY_DAY_CACHE_LOCK:
+        cached = HOURLY_DAY_CACHE.get(cache_key)
+        if cached and cached[0] > now:
+            return jsonify({"date": requested, "hours": cached[1]})
+    params = urllib.parse.urlencode({
+        "latitude": location["latitude"], "longitude": location["longitude"],
+        "models": "ecmwf_ifs", "timezone": "Asia/Manila", "wind_speed_unit": "kmh",
+        "start_date": requested, "end_date": requested,
+        "hourly": "temperature_2m,apparent_temperature,weather_code,precipitation_probability,precipitation,wind_speed_10m,wind_gusts_10m",
+    })
+    try:
+        req = urllib.request.Request("https://api.open-meteo.com/v1/forecast?" + params,
+                                     headers={"User-Agent": f"WeatherWatch/{APP_VERSION}"})
+        with urllib.request.urlopen(req, timeout=15) as response:
+            payload = json.load(response)
+        hourly = payload.get("hourly", {})
+        times = hourly.get("time", [])
+        hours = []
+        for i, stamp in enumerate(times[:24]):
+            def value(field, default=0):
+                values = hourly.get(field) or []
+                return values[i] if i < len(values) and values[i] is not None else default
+            hours.append({
+                "time": stamp, "temperature": value("temperature_2m"),
+                "apparent_temperature": value("apparent_temperature"),
+                "weather_code": value("weather_code"),
+                "precipitation_probability": value("precipitation_probability"),
+                "precipitation": value("precipitation"), "wind_speed": value("wind_speed_10m"),
+                "wind_gust": value("wind_gusts_10m"),
+            })
+        if not hours:
+            raise ValueError("ECMWF returned no hourly data")
+        with HOURLY_DAY_CACHE_LOCK:
+            HOURLY_DAY_CACHE[cache_key] = (now + 900, hours)
+        return jsonify({"date": requested, "hours": hours})
+    except Exception as exc:
+        app.logger.warning("Hourly ECMWF provider error: %s", exc)
+        return jsonify({"error": "Hourly forecast is temporarily unavailable."}), 503
 
 
 def classification_details(rain, gust, thresholds=None):

@@ -158,6 +158,16 @@ server {
     server_name $DOMAIN;
     server_tokens off;
     client_max_body_size 64k;
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+    location /static/ {
+        alias $APP_DIR/static/;
+        access_log off;
+        expires 7d;
+        add_header Cache-Control "public, max-age=604800";
+    }
     location / {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host \$host;

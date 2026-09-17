@@ -25,7 +25,7 @@ def test_home_and_seed_data(tmp_path, monkeypatch):
     assert b"weather-ambient" in response.data
     css = client.get('/static/style.css').get_data(as_text=True)
     assert '.site-shell[data-weather="default"] .weather-ambient' in css
-    assert 'url("weather/partly-cloudy.jpg")' in css
+    assert 'url("weather/partly-cloudy.webp")' in css
     assert b'id="radar-fullscreen"' in response.data
     assert b'aria-label="Play radar timeline"' in response.data
     assert b"Forecast, not an on-site observation" in response.data
@@ -46,7 +46,7 @@ def test_home_and_seed_data(tmp_path, monkeypatch):
     assert b"Checking radar" in response.data
     assert b"Light" in response.data and b"Heavy" in response.data
     for scene in ('sunny', 'partly-cloudy', 'overcast', 'drizzle', 'rainy', 'showers', 'storm', 'foggy'):
-        assert (module.BASE_DIR / 'static' / 'weather' / f'{scene}.jpg').is_file()
+        assert (module.BASE_DIR / 'static' / 'weather' / f'{scene}.webp').is_file()
     assert b"/admin" not in response.data
 
 

@@ -4,7 +4,6 @@ const caps = {normal:'Normal',watch:'WeatherWatch',moderate:'Moderate',heavy:'He
 const esc = value => String(value ?? '').replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
 const number = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const dayName = (date, index) => index === 0 ? 'Today' : new Date(`${date}T12:00:00`).toLocaleDateString([], {weekday:'short'});
-['sunny','partly-cloudy','overcast','drizzle','rainy','showers','storm','foggy'].forEach(name => { const image = new Image(); image.src = `/static/weather/${name}.jpg`; });
 
 function forecastHtml(days = []) {
   return `<div class="forecast" aria-label="Five-day forecast">${days.map((day, index) => `
@@ -37,9 +36,7 @@ function hourlyHtml(hours = []) {
   if (!hours.length) return '';
   return `<details class="hourly-panel">
     <summary><span><b class="hourly-title">Next 24 hours</b><small>ECMWF hourly forecast · Philippine time</small></span><i aria-hidden="true">⌄</i></summary>
-    <div class="hourly-scroll" tabindex="0" aria-label="Scrollable 24-hour weather forecast">
-      ${hourlyItemsHtml(hours.slice(0, 24), true)}
-    </div>
+    <div class="hourly-scroll" tabindex="0" aria-label="Scrollable 24-hour weather forecast"></div>
   </details>`;
 }
 
@@ -188,9 +185,23 @@ function selectSite(card) {
 
 let latestLocations = [];
 
+function bindHourlyPanels() {
+  document.querySelectorAll('.weather-card .hourly-panel').forEach(panel => {
+    panel.addEventListener('toggle', () => {
+      const scroll = panel.querySelector('.hourly-scroll');
+      if (!panel.open || scroll.children.length) return;
+      const card = panel.closest('.weather-card');
+      const location = latestLocations.find(item => Number(item.id) === Number(card?.dataset.locationId));
+      if (!location) return;
+      scroll.innerHTML = hourlyItemsHtml((location.hourly_forecast || []).slice(0, 24), true);
+      scroll.classList.add('hourly-enter');
+    });
+  });
+}
+
 function bindForecastDays() {
   document.querySelectorAll('.forecast-day[data-forecast-date]').forEach(button => {
-    button.addEventListener('click', event => {
+    button.addEventListener('click', async event => {
       event.stopPropagation();
       const card = button.closest('.weather-card');
       const location = latestLocations.find(item => Number(item.id) === Number(card?.dataset.locationId));
@@ -212,7 +223,6 @@ function bindForecastDays() {
         return;
       }
 
-      const hours = (location.hourly_forecast || []).filter(hour => String(hour.time).startsWith(date));
       button.setAttribute('aria-pressed', 'true');
       button.classList.remove('day-selected');
       void button.offsetWidth;
@@ -220,11 +230,30 @@ function bindForecastDays() {
       const label = button.querySelector(':scope > span')?.textContent || date;
       panel.querySelector('.hourly-title').textContent = `${label} hourly forecast`;
       const hourlyScroll = panel.querySelector('.hourly-scroll');
-      hourlyScroll.innerHTML = hours.length
-        ? hourlyItemsHtml(hours, date === String(location.current?.time || '').slice(0, 10))
-        : '<p class="hourly-empty">Hourly forecast is unavailable for this day.</p>';
       panel.classList.remove('is-closing');
       panel.open = true;
+      hourlyScroll.innerHTML = '<p class="hourly-empty">Loading hourly forecast…</p>';
+      let hours = [];
+      const currentDate = String(location.current?.time || '').slice(0, 10);
+      try {
+        if (date === currentDate) {
+          hours = (location.hourly_forecast || []).filter(hour => String(hour.time).startsWith(date));
+        } else {
+          location.hourly_days ||= {};
+          if (!location.hourly_days[date]) {
+            const response = await fetch(`/api/hourly/${number(location.id)}?date=${encodeURIComponent(date)}`, {headers:{Accept:'application/json'}, cache:'no-store'});
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.error || 'Hourly forecast unavailable.');
+            location.hourly_days[date] = payload.hours;
+          }
+          hours = location.hourly_days[date];
+        }
+        if (button.getAttribute('aria-pressed') !== 'true') return;
+        hourlyScroll.innerHTML = hours.length ? hourlyItemsHtml(hours, date === currentDate) : '<p class="hourly-empty">Hourly forecast is unavailable for this day.</p>';
+      } catch (error) {
+        if (button.getAttribute('aria-pressed') !== 'true') return;
+        hourlyScroll.innerHTML = `<p class="hourly-empty">${esc(error.message)}</p>`;
+      }
       hourlyScroll.classList.remove('hourly-enter');
       void hourlyScroll.offsetWidth;
       hourlyScroll.classList.add('hourly-enter');
@@ -276,6 +305,7 @@ async function load() {
       </article>`;
     }).join('');
     bindSiteScenes();
+    bindHourlyPanels();
     bindForecastDays();
     document.querySelector('#updated').textContent = `${data.stale ? 'Last available update' : 'Updated'} ${new Date(data.updated_at).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}`;
     notice.hidden = true;
