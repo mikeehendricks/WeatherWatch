@@ -11,7 +11,7 @@ A responsive operations dashboard for current conditions and multi-provider fore
 - Five-day coordinate-level forecasts updated from ECMWF's six-hourly model runs
 - Interactive three-hour rain timeline with full-screen map, centered scrubber, large media-style SVG play/pause control, two hours of observed RainViewer radar, and the next-hour ECMWF precipitation forecast
 - Five-day forecast for every monitored site
-- Clickable site cards with distinct cinematic scenes for sunny, partly cloudy, overcast, drizzle, rain, showers, fog, and thunderstorms
+- Vivid Philippine sky-and-island welcome scene before selection, plus clickable site cards with distinct cinematic scenes for sunny, partly cloudy, overcast, drizzle, rain, showers, fog, and thunderstorms
 - 11 preloaded locations from the supplied list
 - Branded favicon and Apple touch icon
 - Automatic refresh every five minutes, immediate cross-worker location synchronization, and visible application version

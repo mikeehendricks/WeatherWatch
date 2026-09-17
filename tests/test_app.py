@@ -23,12 +23,14 @@ def test_home_and_seed_data(tmp_path, monkeypatch):
     assert b"Therma South Inc" in response.data
     assert b"Made with" in response.data
     assert b"weather-ambient" in response.data
+    css = client.get('/static/style.css').get_data(as_text=True)
+    assert '.site-shell[data-weather="default"] .weather-ambient' in css
+    assert 'url("weather/partly-cloudy.jpg")' in css
     assert b'id="radar-fullscreen"' in response.data
     assert b'aria-label="Play radar timeline"' in response.data
     assert b"Forecast, not an on-site observation" in response.data
     assert b"Modeled current conditions" in response.data
     assert b"hourly outlook" in response.data
-    css = client.get('/static/style.css').get_data(as_text=True)
     assert '.forecast-day{appearance:none;display:block' in css
     assert 'grid-template-columns:68px minmax(0,1fr) 68px' in css
     assert 'justify-self:center' in css
