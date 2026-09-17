@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block head %}<meta name="csrf-token" content="{{ csrf_token() }}"><script src="{{ url_for('static',filename='app.js',v=app_version) }}" defer></script>{% endblock %}
+{% block head %}<meta name="csrf-token" content="{{ csrf_token() }}"><link rel="stylesheet" href="{{ url_for('static',filename='vendor/leaflet/leaflet.css',v='1.9.4') }}"><script src="{{ url_for('static',filename='vendor/leaflet/leaflet.js',v='1.9.4') }}" defer></script><script src="{{ url_for('static',filename='app.js',v=app_version) }}" defer></script>{% endblock %}
 {% block body %}
 <div class="site-shell" data-weather="default">
   <div class="weather-ambient" aria-hidden="true"><div class="ambient-sun"></div><div class="ambient-cloud cloud-one"></div><div class="ambient-cloud cloud-two"></div><div class="ambient-rain">{% for _ in range(24) %}<i></i>{% endfor %}</div><div class="ambient-flash"></div></div>
@@ -22,7 +22,7 @@
     </section>
     <section class="radar-panel" id="radar-panel" aria-labelledby="radar-title">
       <div class="radar-copy"><p class="section-label">Rain timeline</p><h2 id="radar-title">Three-hour rain view</h2><p id="radar-description">Select a site to play the last two hours of observed radar and see its next-hour ECMWF rain forecast.</p><div class="radar-controls"><button type="button" id="radar-play" disabled><span aria-hidden="true">▶</span> Play</button><input id="radar-slider" type="range" min="0" max="0" value="0" disabled aria-label="Radar timeline"><time id="radar-time">Select a site</time></div><p class="radar-forecast" id="radar-forecast">Next-hour forecast will appear here.</p><a class="radar-credit" href="https://www.rainviewer.com/" target="_blank" rel="noopener noreferrer">Radar data by RainViewer</a></div>
-      <div class="radar-stage" id="radar-stage"><div class="radar-placeholder"><span aria-hidden="true">◎</span><b>No site selected</b><small>Choose any weather card below.</small></div><img id="radar-image" alt="" hidden><span class="radar-pin" aria-hidden="true"></span><div class="radar-sweep" aria-hidden="true"></div></div>
+      <div class="radar-stage" id="radar-stage"><div id="radar-map" aria-label="Interactive map with observed rain radar"></div><div class="radar-placeholder"><span aria-hidden="true">◎</span><b>No site selected</b><small>Choose any weather card below.</small></div></div>
     </section>
     <div id="notice" class="notice" role="status" hidden></div>
     <section id="grid" class="weather-grid" aria-label="Site weather conditions" aria-live="polite">

@@ -25,7 +25,9 @@ def test_radar_timeline_is_limited_to_configured_location(tmp_path, monkeypatch)
     assert len(data['frames']) == 12
     assert data['history_minutes'] == 120
     assert data['attribution'] == 'Radar data by RainViewer'
-    assert all(frame['url'].startswith('https://tilecache.rainviewer.com/v2/radar/') for frame in data['frames'])
+    assert data['tile_host'] == 'https://tilecache.rainviewer.com'
+    assert data['latitude'] and data['longitude']
+    assert all(frame['path'].startswith('/v2/radar/') for frame in data['frames'])
     assert client.get('/api/radar?location_id=999999').status_code == 404
     assert client.get('/api/radar?location_id=not-a-number').status_code == 400
 

@@ -45,7 +45,7 @@ WeatherWatch uses the ECMWF Integrated Forecasting System High Resolution Foreca
 
 ## Rain timeline
 
-After a site is selected, the dashboard plays RainViewer's available two-hour observed-radar history in 10-minute frames and shows the next hour's ECMWF precipitation forecast, forming a clearly labeled three-hour rain timeline. Radar coverage can vary by location and provider availability. RainViewer attribution is displayed in the interface. Before production use, confirm that your deployment qualifies under RainViewer's current API terms; its public service is intended for personal, educational, and small-scale community use and has no availability SLA.
+After a site is selected, the dashboard centers an interactive OpenStreetMap on its exact coordinates, overlays RainViewer's available two-hour observed-radar history in 10-minute frames, and shows the next hour's ECMWF precipitation forecast, forming a clearly labeled three-hour rain timeline. The map supports pan and zoom and marks the selected facility. Radar coverage can vary by location and provider availability. RainViewer attribution is displayed in the interface. Before production use, confirm that your deployment qualifies under RainViewer's current API terms; its public service is intended for personal, educational, and small-scale community use and has no availability SLA.
 
 ## One-command Ubuntu installation
 

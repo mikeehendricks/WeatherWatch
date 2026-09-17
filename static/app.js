@@ -30,15 +30,21 @@ function atmosphereFor(code) {
 let radarFrames = [];
 let radarTimer = null;
 let radarRequest = null;
+let radarMap = null;
+let radarLayer = null;
+let radarMarker = null;
+let radarTileHost = '';
 
 function showRadarFrame(index) {
-  if (!radarFrames.length) return;
+  if (!radarFrames.length || !radarMap) return;
   const safeIndex = Math.max(0, Math.min(index, radarFrames.length - 1));
   const frame = radarFrames[safeIndex];
-  const image = document.querySelector('#radar-image');
   const slider = document.querySelector('#radar-slider');
-  image.src = frame.url;
-  image.hidden = false;
+  if (radarLayer) radarMap.removeLayer(radarLayer);
+  radarLayer = L.tileLayer(`${radarTileHost}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`, {
+    opacity:.72, zIndex:400, maxNativeZoom:7, maxZoom:12, tileSize:256,
+    attribution:'Radar © RainViewer'
+  }).addTo(radarMap);
   slider.value = safeIndex;
   document.querySelector('#radar-time').textContent = new Date(frame.time * 1000).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
 }
@@ -64,11 +70,10 @@ async function loadRadar(card) {
   radarRequest = new AbortController();
   const stage = document.querySelector('#radar-stage');
   const placeholder = stage.querySelector('.radar-placeholder');
-  const image = document.querySelector('#radar-image');
   const button = document.querySelector('#radar-play');
   const slider = document.querySelector('#radar-slider');
   radarFrames = [];
-  image.hidden = true;
+  if (radarLayer && radarMap) { radarMap.removeLayer(radarLayer); radarLayer = null; }
   placeholder.hidden = false;
   placeholder.innerHTML = '<span aria-hidden="true">↻</span><b>Loading live radar…</b><small>Retrieving recent observations.</small>';
   button.disabled = true; slider.disabled = true;
@@ -79,10 +84,24 @@ async function loadRadar(card) {
     const data = await response.json();
     if (!response.ok || !data.frames?.length) throw new Error(data.error || 'No radar frames available.');
     radarFrames = data.frames;
+    radarTileHost = data.tile_host;
+    const center = [number(data.latitude), number(data.longitude)];
+    if (!radarMap) {
+      radarMap = L.map('radar-map', {zoomControl:true, attributionControl:true}).setView(center, 9);
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom:19, attribution:'© OpenStreetMap contributors'
+      }).addTo(radarMap);
+    } else {
+      radarMap.setView(center, 9);
+    }
+    if (radarMarker) radarMap.removeLayer(radarMarker);
+    radarMarker = L.circleMarker(center, {radius:7, color:'#fff', weight:3, fillColor:'#d70015', fillOpacity:1})
+      .bindTooltip(card.dataset.siteName, {direction:'top'}).addTo(radarMap);
+    setTimeout(() => radarMap.invalidateSize(), 0);
     slider.max = radarFrames.length - 1;
     slider.value = radarFrames.length - 1;
     slider.disabled = false; button.disabled = false; placeholder.hidden = true;
-    image.alt = `Observed rain radar centered on ${card.dataset.siteName}`;
+    document.querySelector('#radar-description').textContent = 'Observed radar playback for the last two hours. Transparent radar areas mean no detected precipitation or unavailable coverage.';
     showRadarFrame(radarFrames.length - 1);
   } catch (error) {
     if (error.name === 'AbortError') return;

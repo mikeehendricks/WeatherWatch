@@ -212,7 +212,7 @@ def secure_headers(response):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
-    response.headers["Content-Security-Policy"] = "default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; style-src 'self'; script-src 'self'; img-src 'self' data: https://tilecache.rainviewer.com; connect-src 'self'; frame-ancestors 'none'"
+    response.headers["Content-Security-Policy"] = "default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; style-src 'self'; script-src 'self'; img-src 'self' data: https://tilecache.rainviewer.com https://tile.openstreetmap.org; connect-src 'self'; frame-ancestors 'none'"
     response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
     response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
     response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
@@ -332,12 +332,10 @@ def radar_timeline():
     try:
         host, frames = rainviewer_frames()
         lat, lon = float(location["latitude"]), float(location["longitude"])
-        timeline = [{
-            "time": frame["time"],
-            "url": f"{host}{frame['path']}/512/7/{lat:.5f}/{lon:.5f}/2/1_1.png",
-        } for frame in frames]
+        timeline = [{"time": frame["time"], "path": frame["path"]} for frame in frames]
         return jsonify({
             "location_id": location_id, "location": location["name"],
+            "latitude": lat, "longitude": lon, "tile_host": host,
             "frames": timeline, "history_minutes": 120,
             "attribution": "Radar data by RainViewer",
             "attribution_url": "https://www.rainviewer.com/",
