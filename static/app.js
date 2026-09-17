@@ -27,6 +27,69 @@ function atmosphereFor(code) {
   return 'sunny';
 }
 
+let radarFrames = [];
+let radarTimer = null;
+let radarRequest = null;
+
+function showRadarFrame(index) {
+  if (!radarFrames.length) return;
+  const safeIndex = Math.max(0, Math.min(index, radarFrames.length - 1));
+  const frame = radarFrames[safeIndex];
+  const image = document.querySelector('#radar-image');
+  const slider = document.querySelector('#radar-slider');
+  image.src = frame.url;
+  image.hidden = false;
+  slider.value = safeIndex;
+  document.querySelector('#radar-time').textContent = new Date(frame.time * 1000).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+}
+
+function stopRadar() {
+  if (radarTimer) clearInterval(radarTimer);
+  radarTimer = null;
+  const button = document.querySelector('#radar-play');
+  button.innerHTML = '<span aria-hidden="true">▶</span> Play';
+}
+
+function playRadar() {
+  if (!radarFrames.length) return;
+  if (radarTimer) { stopRadar(); return; }
+  const slider = document.querySelector('#radar-slider');
+  document.querySelector('#radar-play').innerHTML = '<span aria-hidden="true">Ⅱ</span> Pause';
+  radarTimer = setInterval(() => showRadarFrame((Number(slider.value) + 1) % radarFrames.length), 850);
+}
+
+async function loadRadar(card) {
+  stopRadar();
+  if (radarRequest) radarRequest.abort();
+  radarRequest = new AbortController();
+  const stage = document.querySelector('#radar-stage');
+  const placeholder = stage.querySelector('.radar-placeholder');
+  const image = document.querySelector('#radar-image');
+  const button = document.querySelector('#radar-play');
+  const slider = document.querySelector('#radar-slider');
+  radarFrames = [];
+  image.hidden = true;
+  placeholder.hidden = false;
+  placeholder.innerHTML = '<span aria-hidden="true">↻</span><b>Loading live radar…</b><small>Retrieving recent observations.</small>';
+  button.disabled = true; slider.disabled = true;
+  document.querySelector('#radar-title').textContent = `Rain near ${card.dataset.siteName}`;
+  document.querySelector('#radar-forecast').textContent = `Next hour · ${number(card.dataset.nextHourRain).toFixed(1)} mm ECMWF forecast`;
+  try {
+    const response = await fetch(`/api/radar?location_id=${encodeURIComponent(card.dataset.locationId)}`, {signal:radarRequest.signal, cache:'no-store'});
+    const data = await response.json();
+    if (!response.ok || !data.frames?.length) throw new Error(data.error || 'No radar frames available.');
+    radarFrames = data.frames;
+    slider.max = radarFrames.length - 1;
+    slider.value = radarFrames.length - 1;
+    slider.disabled = false; button.disabled = false; placeholder.hidden = true;
+    image.alt = `Observed rain radar centered on ${card.dataset.siteName}`;
+    showRadarFrame(radarFrames.length - 1);
+  } catch (error) {
+    if (error.name === 'AbortError') return;
+    placeholder.innerHTML = `<span aria-hidden="true">!</span><b>Radar unavailable</b><small>${esc(error.message)}</small>`;
+  }
+}
+
 function selectSite(card) {
   document.querySelectorAll('.weather-card[aria-pressed]').forEach(item => item.setAttribute('aria-pressed', String(item === card)));
   const shell = document.querySelector('.site-shell');
@@ -35,6 +98,7 @@ function selectSite(card) {
   const condition = labels[Number(card.dataset.weatherCode)] || 'current weather';
   const hint = document.querySelector('#scene-hint');
   hint.textContent = `● ${card.dataset.siteName} · ${condition}`;
+  loadRadar(card);
   card.scrollIntoView({behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block:'nearest'});
 }
 
@@ -59,7 +123,7 @@ async function load() {
     if (!response.ok) throw new Error(data.error || 'Could not load weather.');
     document.querySelector('#grid').innerHTML = data.locations.map(location => {
       const code = location.current.weather_code;
-      return `<article class="weather-card severity-${esc(location.severity)}" role="button" tabindex="0" aria-pressed="false" data-weather-code="${number(code)}" data-site-name="${esc(location.name)}" aria-label="Show ${esc(labels[code] || 'weather')} atmosphere for ${esc(location.name)}">
+      return `<article class="weather-card severity-${esc(location.severity)}" role="button" tabindex="0" aria-pressed="false" data-weather-code="${number(code)}" data-location-id="${number(location.id)}" data-next-hour-rain="${number(location.next_hour_rain)}" data-site-name="${esc(location.name)}" aria-label="Show ${esc(labels[code] || 'weather')} atmosphere for ${esc(location.name)}">
         <div class="card-heading">
           <div><p class="card-label">Site</p><h2>${esc(location.name)}</h2><p>${esc(location.address)}</p></div>
           <span class="severity-chip"><i></i>${esc(caps[location.severity])}</span>
@@ -91,6 +155,9 @@ async function heartbeat() {
   try { await fetch('/api/visitor-heartbeat', {method:'POST', headers:{'X-CSRF-Token':token}, cache:'no-store'}); }
   catch (_) { /* Weather refresh surfaces connectivity errors. */ }
 }
+
+document.querySelector('#radar-play')?.addEventListener('click', playRadar);
+document.querySelector('#radar-slider')?.addEventListener('input', event => { stopRadar(); showRadarFrame(Number(event.target.value)); });
 
 load();
 setInterval(load, 300000);

@@ -48,6 +48,8 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
 
 WEATHER_CACHE = {"expires": 0.0, "payload": None, "location_key": None}
 WEATHER_CACHE_LOCK = threading.Lock()
+RADAR_CACHE = {"expires": 0.0, "host": "", "frames": []}
+RADAR_CACHE_LOCK = threading.Lock()
 VISITOR_LOOKUPS = set()
 VISITOR_LOOKUPS_LOCK = threading.Lock()
 MANILA_TZ = ZoneInfo("Asia/Manila")
@@ -210,7 +212,7 @@ def secure_headers(response):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
-    response.headers["Content-Security-Policy"] = "default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'"
+    response.headers["Content-Security-Policy"] = "default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; style-src 'self'; script-src 'self'; img-src 'self' data: https://tilecache.rainviewer.com; connect-src 'self'; frame-ancestors 'none'"
     response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
     response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
     response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
@@ -290,6 +292,61 @@ def visitor_heartbeat():
     return "", 204
 
 
+def rainviewer_frames():
+    now = time.monotonic()
+    with RADAR_CACHE_LOCK:
+        if RADAR_CACHE["frames"] and RADAR_CACHE["expires"] > now:
+            return RADAR_CACHE["host"], RADAR_CACHE["frames"]
+    req = urllib.request.Request(
+        "https://api.rainviewer.com/public/weather-maps.json",
+        headers={"User-Agent": f"WeatherWatch/{APP_VERSION}"},
+    )
+    with urllib.request.urlopen(req, timeout=10) as response:
+        data = json.load(response)
+    host = str(data.get("host", ""))
+    frames = data.get("radar", {}).get("past", [])
+    if host != "https://tilecache.rainviewer.com" or not frames:
+        raise ValueError("Unexpected radar provider response")
+    clean_frames = [
+        {"time": int(frame["time"]), "path": str(frame["path"])}
+        for frame in frames[-12:]
+        if str(frame.get("path", "")).startswith("/v2/radar/")
+    ]
+    with RADAR_CACHE_LOCK:
+        RADAR_CACHE.update(host=host, frames=clean_frames, expires=time.monotonic() + 300)
+    return host, clean_frames
+
+
+@app.get("/api/radar")
+def radar_timeline():
+    try:
+        location_id = int(request.args.get("location_id", "0"))
+    except ValueError:
+        return jsonify({"error": "Invalid location."}), 400
+    with db() as conn:
+        location = conn.execute(
+            "SELECT id, name, latitude, longitude FROM locations WHERE id=?", (location_id,)
+        ).fetchone()
+    if location is None:
+        return jsonify({"error": "Location not found."}), 404
+    try:
+        host, frames = rainviewer_frames()
+        lat, lon = float(location["latitude"]), float(location["longitude"])
+        timeline = [{
+            "time": frame["time"],
+            "url": f"{host}{frame['path']}/512/7/{lat:.5f}/{lon:.5f}/2/1_1.png",
+        } for frame in frames]
+        return jsonify({
+            "location_id": location_id, "location": location["name"],
+            "frames": timeline, "history_minutes": 120,
+            "attribution": "Radar data by RainViewer",
+            "attribution_url": "https://www.rainviewer.com/",
+        })
+    except Exception as exc:
+        app.logger.warning("Radar provider error: %s", exc)
+        return jsonify({"error": "Rain radar is temporarily unavailable."}), 503
+
+
 def locations_cache_key(locations):
     """Create a stable cache identity shared conceptually across all workers."""
     return tuple(
@@ -324,6 +381,7 @@ def weather():
         "longitude": ",".join(str(x["longitude"]) for x in locations),
         "models": "ecmwf_ifs",
         "current": "temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_gusts_10m",
+        "hourly": "precipitation",
         "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_gusts_10m_max",
         "forecast_days": 5, "timezone": "Asia/Manila", "wind_speed_unit": "kmh"
     })
@@ -354,9 +412,17 @@ def weather():
                     "rain": rain, "gust": gust, "severity": classify(rain, gust),
                 })
             first = days[0] if days else {"rain": 0, "gust": 0, "severity": "normal"}
+            hourly = model_forecast.get("hourly", {})
+            next_hour_rain = 0.0
+            current_time = str(current.get("time", ""))
+            for stamp, amount in zip(hourly.get("time", []), hourly.get("precipitation", [])):
+                if stamp > current_time:
+                    next_hour_rain = float(amount or 0)
+                    break
             result.append({
                 **loc, "current": current, "rain": first["rain"], "gust": first["gust"],
                 "severity": first["severity"], "forecast": days,
+                "next_hour_rain": next_hour_rain,
                 "source": "ECMWF IFS HRES 9 km", "selection": "Direct ECMWF model",
             })
         payload = {

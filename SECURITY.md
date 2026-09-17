@@ -17,6 +17,7 @@ The application was reviewed for OWASP-style web risks, deployment weaknesses, d
 - **Visitor-data protection:** IP/ISP data is admin-only, automatically expires after a bounded retention period, and is disclosed on the public footer.
 - **CSV injection prevention:** exported visitor fields that could be interpreted as spreadsheet formulas are neutralized.
 - **ISP lookup isolation:** lookups use validated IP literals, a fixed HTTPS provider host, strict timeouts, bounded response fields, and background execution.
+- **Radar URL isolation:** radar metadata accepts only RainViewer's fixed HTTPS tile host and known path prefix; site IDs and coordinates come exclusively from the database, preventing an open proxy or arbitrary URL injection.
 - **Server fingerprint reduction:** generated nginx configuration disables version tokens.
 - **Brute-force login attempts:** added persistent per-IP and per-username throttling, bounded inputs, cleanup, and constant-work password verification for unknown users.
 - **Stored script injection risk in admin confirmations:** removed inline JavaScript containing location data. Confirmations now use a same-origin static script and constant messages compatible with the strict CSP.

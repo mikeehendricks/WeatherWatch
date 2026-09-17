@@ -7,6 +7,7 @@ A responsive operations dashboard for current conditions and multi-provider fore
 - Live dashboard with five-level severity color matrix
 - Direct ECMWF IFS HRES forecasts at native 9 km resolution
 - Five-day coordinate-level forecasts updated from ECMWF's six-hourly model runs
+- Interactive three-hour rain timeline: two hours of observed RainViewer radar plus the next-hour ECMWF precipitation forecast
 - Five-day forecast for every monitored site
 - Clickable site cards with distinct cinematic scenes for sunny, partly cloudy, overcast, drizzle, rain, showers, fog, and thunderstorms
 - 11 preloaded locations from the supplied list
@@ -41,6 +42,10 @@ The image did not specify numeric thresholds for WeatherWatch, so 1 mm rain / 40
 ## Weather source
 
 WeatherWatch uses the ECMWF Integrated Forecasting System High Resolution Forecast (IFS HRES) at its native 9 km global resolution. Data is requested by exact site coordinates through Open-Meteo's ECMWF delivery API using the explicit `ecmwf_ifs` model selector; Open-Meteo is the transport/API layer, not an additional forecast vote. Results are cached for five minutes, and the last matching-location result remains available during short upstream interruptions. Values are numerical-model forecasts rather than on-site instrument observations.
+
+## Rain timeline
+
+After a site is selected, the dashboard plays RainViewer's available two-hour observed-radar history in 10-minute frames and shows the next hour's ECMWF precipitation forecast, forming a clearly labeled three-hour rain timeline. Radar coverage can vary by location and provider availability. RainViewer attribution is displayed in the interface. Before production use, confirm that your deployment qualifies under RainViewer's current API terms; its public service is intended for personal, educational, and small-scale community use and has no availability SLA.
 
 ## One-command Ubuntu installation
 
