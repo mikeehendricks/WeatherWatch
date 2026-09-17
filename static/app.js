@@ -41,10 +41,40 @@ function showRadarFrame(index) {
   const frame = radarFrames[safeIndex];
   const slider = document.querySelector('#radar-slider');
   if (radarLayer) radarMap.removeLayer(radarLayer);
+  const radarStatus = document.querySelector('#radar-status');
+  const radarLegend = document.querySelector('.radar-legend');
+  radarStatus.hidden = false;
+  radarStatus.className = 'radar-status checking';
+  radarStatus.querySelector('span').textContent = 'Checking radar echoes…';
+  radarLegend.hidden = false;
+  let loadedTiles = 0;
+  let echoTiles = 0;
   radarLayer = L.tileLayer(`${radarTileHost}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`, {
-    opacity:.72, zIndex:400, maxNativeZoom:7, maxZoom:12, tileSize:256,
-    attribution:'Radar © RainViewer'
-  }).addTo(radarMap);
+    opacity:.92, zIndex:400, maxNativeZoom:7, maxZoom:12, tileSize:256,
+    crossOrigin:true, attribution:'Radar © RainViewer'
+  });
+  radarLayer.on('tileload', event => {
+    loadedTiles += 1;
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = 32; canvas.height = 32;
+      const context = canvas.getContext('2d', {willReadFrequently:true});
+      context.drawImage(event.tile, 0, 0, 32, 32);
+      const pixels = context.getImageData(0, 0, 32, 32).data;
+      for (let pixel = 3; pixel < pixels.length; pixel += 4) {
+        if (pixels[pixel] > 40) { echoTiles += 1; break; }
+      }
+    } catch (_) { echoTiles = Math.max(echoTiles, 1); }
+    radarStatus.className = `radar-status ${echoTiles ? 'echoes' : 'clear'}`;
+    radarStatus.querySelector('span').textContent = echoTiles
+      ? 'Observed precipitation shown'
+      : `No precipitation detected in ${loadedTiles} map tile${loadedTiles === 1 ? '' : 's'}`;
+  });
+  radarLayer.on('tileerror', () => {
+    radarStatus.className = 'radar-status unavailable';
+    radarStatus.querySelector('span').textContent = 'Radar coverage unavailable';
+  });
+  radarLayer.addTo(radarMap);
   slider.value = safeIndex;
   document.querySelector('#radar-time').textContent = new Date(frame.time * 1000).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
 }
@@ -74,6 +104,8 @@ async function loadRadar(card) {
   const slider = document.querySelector('#radar-slider');
   radarFrames = [];
   if (radarLayer && radarMap) { radarMap.removeLayer(radarLayer); radarLayer = null; }
+  document.querySelector('#radar-status').hidden = true;
+  document.querySelector('.radar-legend').hidden = true;
   placeholder.hidden = false;
   placeholder.innerHTML = '<span aria-hidden="true">↻</span><b>Loading live radar…</b><small>Retrieving recent observations.</small>';
   button.disabled = true; slider.disabled = true;
@@ -87,12 +119,12 @@ async function loadRadar(card) {
     radarTileHost = data.tile_host;
     const center = [number(data.latitude), number(data.longitude)];
     if (!radarMap) {
-      radarMap = L.map('radar-map', {zoomControl:true, attributionControl:true}).setView(center, 9);
+      radarMap = L.map('radar-map', {zoomControl:true, attributionControl:true}).setView(center, 8);
       L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom:19, attribution:'© OpenStreetMap contributors'
       }).addTo(radarMap);
     } else {
-      radarMap.setView(center, 9);
+      radarMap.setView(center, 8);
     }
     if (radarMarker) radarMap.removeLayer(radarMarker);
     radarMarker = L.circleMarker(center, {radius:7, color:'#fff', weight:3, fillColor:'#d70015', fillOpacity:1})
