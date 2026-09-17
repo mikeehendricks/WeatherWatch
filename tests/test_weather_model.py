@@ -13,8 +13,15 @@ class FakeResponse:
 
 def forecast_payload():
     dates = ['2026-09-09','2026-09-10','2026-09-11','2026-09-12','2026-09-13']
+    hours = [f'2026-09-{9 + i // 24:02d}T{i % 24:02d}:00' for i in range(30)]
     return {
-        'current': {'temperature_2m': 29, 'apparent_temperature': 32, 'weather_code': 2},
+        'current': {'time': '2026-09-09T03:00', 'temperature_2m': 29, 'apparent_temperature': 32, 'weather_code': 2},
+        'hourly': {
+            'time': hours, 'temperature_2m': [28 + i % 4 for i in range(30)],
+            'apparent_temperature': [31 + i % 4 for i in range(30)], 'weather_code': [2] * 30,
+            'precipitation_probability': [40] * 30, 'precipitation': [0.2] * 30,
+            'wind_speed_10m': [15] * 30, 'wind_gusts_10m': [25] * 30,
+        },
         'daily': {
             'time': dates, 'weather_code': [2]*5,
             'temperature_2m_max': [31]*5, 'temperature_2m_min': [25]*5,
@@ -44,3 +51,10 @@ def test_weather_uses_explicit_ecmwf_ifs_hres(tmp_path, monkeypatch):
     assert data['matrix_updated_at']
     assert 'no-store' in response.headers['Cache-Control']
     assert all(len(item['forecast']) == 5 for item in data['locations'])
+    assert all(len(item['hourly_forecast']) == 24 for item in data['locations'])
+    first_hour = data['locations'][0]['hourly_forecast'][0]
+    assert first_hour['time'] == '2026-09-09T03:00'
+    assert first_hour['precipitation_probability'] == 40
+    assert first_hour['wind_gust'] == 25
+    assert 'temperature_2m' in query['hourly'][0]
+    assert 'precipitation_probability' in query['hourly'][0]

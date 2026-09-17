@@ -410,7 +410,7 @@ def weather():
         "longitude": ",".join(str(x["longitude"]) for x in locations),
         "models": "ecmwf_ifs",
         "current": "temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_gusts_10m",
-        "hourly": "precipitation",
+        "hourly": "temperature_2m,apparent_temperature,weather_code,precipitation_probability,precipitation,wind_speed_10m,wind_gusts_10m",
         "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_gusts_10m_max",
         "forecast_days": 5, "timezone": "Asia/Manila", "wind_speed_unit": "kmh"
     })
@@ -443,16 +443,36 @@ def weather():
             first = days[0] if days else {"rain": 0, "gust": 0, "severity": "normal"}
             _, severity_reason = classification_details(first["rain"], first["gust"], thresholds)
             hourly = model_forecast.get("hourly", {})
-            next_hour_rain = 0.0
             current_time = str(current.get("time", ""))
-            for stamp, amount in zip(hourly.get("time", []), hourly.get("precipitation", [])):
+            hourly_times = hourly.get("time", [])
+            hourly_forecast = []
+            for i, stamp in enumerate(hourly_times):
+                if stamp < current_time:
+                    continue
+                def hourly_value(field, default=0):
+                    values = hourly.get(field) or []
+                    return values[i] if i < len(values) and values[i] is not None else default
+                hourly_forecast.append({
+                    "time": stamp,
+                    "temperature": hourly_value("temperature_2m"),
+                    "apparent_temperature": hourly_value("apparent_temperature"),
+                    "weather_code": hourly_value("weather_code"),
+                    "precipitation_probability": hourly_value("precipitation_probability"),
+                    "precipitation": hourly_value("precipitation"),
+                    "wind_speed": hourly_value("wind_speed_10m"),
+                    "wind_gust": hourly_value("wind_gusts_10m"),
+                })
+                if len(hourly_forecast) == 24:
+                    break
+            next_hour_rain = 0.0
+            for stamp, amount in zip(hourly_times, hourly.get("precipitation", [])):
                 if stamp > current_time:
                     next_hour_rain = float(amount or 0)
                     break
             result.append({
                 **loc, "current": current, "rain": first["rain"], "gust": first["gust"],
                 "severity": first["severity"], "severity_reason": severity_reason, "forecast": days,
-                "next_hour_rain": next_hour_rain,
+                "next_hour_rain": next_hour_rain, "hourly_forecast": hourly_forecast,
                 "source": "ECMWF IFS HRES 9 km", "selection": "Direct ECMWF model",
             })
         payload = {

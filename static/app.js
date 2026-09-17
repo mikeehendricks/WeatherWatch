@@ -16,6 +16,30 @@ function forecastHtml(days = []) {
     </div>`).join('')}</div>`;
 }
 
+function hourlyHtml(hours = []) {
+  if (!hours.length) return '';
+  return `<details class="hourly-panel">
+    <summary><span><b>Next 24 hours</b><small>ECMWF hourly forecast · Philippine time</small></span><i aria-hidden="true">⌄</i></summary>
+    <div class="hourly-scroll" tabindex="0" aria-label="Scrollable 24-hour weather forecast">
+      ${hours.map((hour, index) => {
+        const date = new Date(hour.time);
+        const time = date.toLocaleTimeString([], {hour:'numeric'});
+        const day = index === 0 ? 'Now' : (date.getHours() === 0 ? date.toLocaleDateString([], {weekday:'short'}) : time);
+        const code = number(hour.weather_code);
+        return `<div class="hour-item">
+          <time datetime="${esc(hour.time)}">${esc(day)}</time>
+          <span class="hour-glyph" title="${esc(labels[code] || 'Weather')}">${glyphs[code] || '◌'}</span>
+          <b>${Math.round(number(hour.temperature))}°</b>
+          <small>Feels ${Math.round(number(hour.apparent_temperature))}°</small>
+          <span class="hour-rain" title="Forecast precipitation probability and amount">☂ ${Math.round(number(hour.precipitation_probability))}%</span>
+          <small>${number(hour.precipitation).toFixed(1)} mm</small>
+          <small title="Forecast wind gust">Gust ${Math.round(number(hour.wind_gust))} kph</small>
+        </div>`;
+      }).join('')}
+    </div>
+  </details>`;
+}
+
 function atmosphereFor(code) {
   if ([95,96,99].includes(code)) return 'storm';
   if ([80,81,82].includes(code)) return 'showers';
@@ -158,6 +182,7 @@ function bindSiteScenes() {
   cards.forEach(card => {
     card.addEventListener('click', () => selectSite(card));
     card.addEventListener('keydown', event => {
+      if (event.target.closest('details,summary,.hourly-scroll')) return;
       if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectSite(card); }
     });
   });
@@ -188,6 +213,7 @@ async function load() {
             <div><span>Max gust</span><b>${Math.round(number(location.gust))} <small>kph</small></b></div>
           </div>
         </div>
+        ${hourlyHtml(location.hourly_forecast)}
         ${forecastHtml(location.forecast)}
         <div class="alert-driver"><i class="${esc(location.severity)}"></i><b>Forecast color driver</b><span>${esc(location.severity_reason)}</span></div>
         <div class="card-meta"><span><b>Source</b>${esc(location.source)}</span><span title="${esc(location.plus_code)}">${number(location.latitude).toFixed(3)}, ${number(location.longitude).toFixed(3)}</span></div>
