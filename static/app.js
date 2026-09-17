@@ -169,7 +169,9 @@ function bindSiteScenes() {
 async function load() {
   const notice = document.querySelector('#notice');
   try {
-    const response = await fetch('/api/weather', {headers:{Accept:'application/json'}, cache:'no-store'});
+    // The revision query prevents an upstream CDN rule from serving a color
+    // classification created before the matrix was recalibrated.
+    const response = await fetch(`/api/weather?refresh=${Date.now()}`, {headers:{Accept:'application/json'}, cache:'no-store'});
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Could not load weather.');
     document.querySelector('#grid').innerHTML = data.locations.map(location => {
@@ -187,6 +189,7 @@ async function load() {
           </div>
         </div>
         ${forecastHtml(location.forecast)}
+        <div class="alert-driver"><i class="${esc(location.severity)}"></i><b>Color driver</b><span>${esc(location.severity_reason)}</span></div>
         <div class="card-meta"><span><b>Source</b>${esc(location.source)}</span><span title="${esc(location.plus_code)}">${number(location.latitude).toFixed(3)}, ${number(location.longitude).toFixed(3)}</span></div>
       </article>`;
     }).join('');

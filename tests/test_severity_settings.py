@@ -43,6 +43,27 @@ def test_matrix_update_requires_authentication(tmp_path, monkeypatch):
     assert '/admin' in response.headers['Location']
 
 
+def test_weather_api_reclassifies_immediately_after_save(tmp_path, monkeypatch):
+    import json
+    from test_weather_model import forecast_payload
+    module, client = authenticated_client(tmp_path, monkeypatch)
+    class Response:
+        def __enter__(self): return self
+        def __exit__(self, *_): pass
+        def read(self, *_):
+            with module.db() as conn:
+                count = conn.execute('SELECT COUNT(*) FROM locations').fetchone()[0]
+            return json.dumps([forecast_payload() for _ in range(count)]).encode()
+    monkeypatch.setattr(module.urllib.request, 'urlopen', lambda *args, **kwargs: Response())
+    module.WEATHER_CACHE.update(payload=None, expires=0, location_key=None)
+    assert client.get('/api/weather').get_json()['locations'][0]['severity'] == 'watch'
+    csrf = token(client, '/admin/dashboard')
+    client.post('/admin/severity', data=valid_settings(csrf, watch_rain='10', watch_gust='40'))
+    refreshed = client.get('/api/weather').get_json()
+    assert refreshed['locations'][0]['severity'] == 'normal'
+    assert refreshed['locations'][0]['severity_reason'] == 'below configured thresholds'
+
+
 def test_main_page_displays_saved_thresholds(tmp_path, monkeypatch):
     module, client = authenticated_client(tmp_path, monkeypatch)
     csrf = token(client, '/admin/dashboard')

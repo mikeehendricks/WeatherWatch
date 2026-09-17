@@ -13,7 +13,7 @@ def register(client):
 def test_admin_security_headers(tmp_path, monkeypatch):
     module = load(tmp_path, monkeypatch)
     response = module.app.test_client().get('/admin')
-    assert response.headers['Cache-Control'] == 'no-store, max-age=0'
+    assert 'no-store' in response.headers['Cache-Control']
     assert "frame-ancestors 'none'" in response.headers['Content-Security-Policy']
     assert response.headers['X-Frame-Options'] == 'DENY'
 

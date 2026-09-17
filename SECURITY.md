@@ -13,6 +13,7 @@ The application was reviewed for OWASP-style web risks, deployment weaknesses, d
 - **Login throttle bypass by username rotation:** rate limiting now enforces both five failures per IP/username pair and 20 total failures per IP in 15 minutes.
 - **Cross-site request defense in depth:** state-changing requests with an `Origin` header are rejected unless the origin matches the validated host, in addition to mandatory CSRF tokens.
 - **Browser isolation hardening:** CSP now restricts base URLs, forms, and plugins; COOP, CORP, and cross-domain-policy denial headers were added.
+- **Stale classification prevention:** API responses use explicit no-store/no-cache headers and revisioned client requests so reverse proxies cannot retain old matrix results.
 - **Session-cookie hardening:** HTTPS deployments use a `__Host-` prefixed cookie, preventing Domain scoping and requiring a secure host-only cookie.
 - **Visitor-data protection:** IP/ISP data is admin-only, automatically expires after a bounded retention period, and is disclosed on the public footer.
 - **CSV injection prevention:** exported visitor fields that could be interpreted as spreadsheet formulas are neutralized.

@@ -230,9 +230,12 @@ def secure_headers(response):
     response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
     response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
     response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
-    if request.path.startswith("/admin"):
-        response.headers["Cache-Control"] = "no-store, max-age=0"
+    if request.path.startswith("/admin") or request.path.startswith("/api/"):
+        # Prevent browsers and reverse proxies (including Cloudflare) from
+        # retaining classifications after an administrator changes thresholds.
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
         response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
     if request.is_secure:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
@@ -438,6 +441,7 @@ def weather():
                     "rain": rain, "gust": gust, "severity": classify(rain, gust, thresholds),
                 })
             first = days[0] if days else {"rain": 0, "gust": 0, "severity": "normal"}
+            _, severity_reason = classification_details(first["rain"], first["gust"], thresholds)
             hourly = model_forecast.get("hourly", {})
             next_hour_rain = 0.0
             current_time = str(current.get("time", ""))
@@ -447,13 +451,14 @@ def weather():
                     break
             result.append({
                 **loc, "current": current, "rain": first["rain"], "gust": first["gust"],
-                "severity": first["severity"], "forecast": days,
+                "severity": first["severity"], "severity_reason": severity_reason, "forecast": days,
                 "next_hour_rain": next_hour_rain,
                 "source": "ECMWF IFS HRES 9 km", "selection": "Direct ECMWF model",
             })
         payload = {
             "locations": result, "updated_at": datetime.now(timezone.utc).isoformat(),
             "method": "ECMWF IFS HRES 9 km",
+            "matrix_updated_at": thresholds["updated_at"],
         }
         with WEATHER_CACHE_LOCK:
             WEATHER_CACHE.update(payload=payload, expires=time.monotonic() + 300, location_key=location_key)
@@ -467,13 +472,25 @@ def weather():
         return jsonify({"error": "ECMWF weather data is temporarily unavailable."}), 503
 
 
-def classify(rain, gust, thresholds=None):
+def classification_details(rain, gust, thresholds=None):
     thresholds = thresholds or get_severity_settings()
-    if rain > thresholds["extreme_rain"] or gust > thresholds["extreme_gust"]: return "extreme"
-    if rain >= thresholds["heavy_rain"] or gust >= thresholds["heavy_gust"]: return "heavy"
-    if rain >= thresholds["moderate_rain"] or gust >= thresholds["moderate_gust"]: return "moderate"
-    if rain >= thresholds["watch_rain"] or gust >= thresholds["watch_gust"]: return "watch"
-    return "normal"
+    checks = (
+        ("extreme", rain > thresholds["extreme_rain"], gust > thresholds["extreme_gust"]),
+        ("heavy", rain >= thresholds["heavy_rain"], gust >= thresholds["heavy_gust"]),
+        ("moderate", rain >= thresholds["moderate_rain"], gust >= thresholds["moderate_gust"]),
+        ("watch", rain >= thresholds["watch_rain"], gust >= thresholds["watch_gust"]),
+    )
+    for severity, rain_triggered, gust_triggered in checks:
+        if rain_triggered or gust_triggered:
+            drivers = []
+            if rain_triggered: drivers.append(f"rain {rain:.1f} mm")
+            if gust_triggered: drivers.append(f"gust {gust:.0f} kph")
+            return severity, " and ".join(drivers)
+    return "normal", "below configured thresholds"
+
+
+def classify(rain, gust, thresholds=None):
+    return classification_details(rain, gust, thresholds)[0]
 
 
 def login_is_limited(ip, username):

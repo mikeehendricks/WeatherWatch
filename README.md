@@ -38,7 +38,7 @@ The highest category triggered by today's forecast precipitation or maximum wind
 | Heavy / Strong | Rain 50–100 mm or gust 100–130 kph |
 | Extreme | Rain >100 mm or gust >130 kph |
 
-The initial values follow the supplied matrix, with 0.1 mm rain / 40 kph gust as the WeatherWatch floor. Administrators can recalibrate all rain and gust thresholds from `/admin`; values are validated as strictly increasing and forecast colors refresh immediately across Gunicorn workers.
+The initial values follow the supplied matrix, with 0.1 mm rain / 40 kph gust as the WeatherWatch floor. Administrators can recalibrate all rain and gust thresholds from `/admin`; values are validated as strictly increasing and forecast colors refresh immediately across Gunicorn workers and CDN/browser caches. Every site card identifies the rain and/or gust value currently driving its color.
 
 ## Weather source
 

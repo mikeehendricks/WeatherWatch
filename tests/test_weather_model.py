@@ -40,4 +40,7 @@ def test_weather_uses_explicit_ecmwf_ifs_hres(tmp_path, monkeypatch):
     data = response.get_json()
     assert data['method'] == 'ECMWF IFS HRES 9 km'
     assert all(item['source'] == 'ECMWF IFS HRES 9 km' for item in data['locations'])
+    assert all(item['severity_reason'] for item in data['locations'])
+    assert data['matrix_updated_at']
+    assert 'no-store' in response.headers['Cache-Control']
     assert all(len(item['forecast']) == 5 for item in data['locations'])
