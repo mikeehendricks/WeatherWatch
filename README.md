@@ -9,7 +9,7 @@ A responsive operations dashboard for current conditions and multi-provider fore
 - Explicit modeled-versus-observed labeling throughout the dashboard
 - Animated interactive five-day forecast cards: select a day to correlate it with that site's hourly weather, or select the same day again to collapse the hourly panel
 - Five-day coordinate-level forecasts updated from ECMWF's six-hourly model runs
-- Interactive three-hour rain timeline with full-screen map, precisely centered scrubber/playback controls, two hours of observed RainViewer radar, and the next-hour ECMWF precipitation forecast
+- Interactive three-hour rain timeline with full-screen map, centered scrubber, large media-style SVG play/pause control, two hours of observed RainViewer radar, and the next-hour ECMWF precipitation forecast
 - Five-day forecast for every monitored site
 - Clickable site cards with distinct cinematic scenes for sunny, partly cloudy, overcast, drizzle, rain, showers, fog, and thunderstorms
 - 11 preloaded locations from the supplied list

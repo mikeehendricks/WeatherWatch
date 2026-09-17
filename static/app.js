@@ -111,7 +111,7 @@ function stopRadar() {
   if (radarTimer) clearInterval(radarTimer);
   radarTimer = null;
   const button = document.querySelector('#radar-play');
-  button.innerHTML = '<span aria-hidden="true">▶</span>';
+  button.innerHTML = '<svg aria-hidden="true" viewBox="0 0 48 48"><path d="M9 5.5v37L41 24 9 5.5z"/></svg>';
   button.setAttribute('aria-label', 'Play radar timeline');
   button.title = 'Play';
 }
@@ -121,7 +121,7 @@ function playRadar() {
   if (radarTimer) { stopRadar(); return; }
   const slider = document.querySelector('#radar-slider');
   const button = document.querySelector('#radar-play');
-  button.innerHTML = '<span aria-hidden="true">Ⅱ</span>';
+  button.innerHTML = '<svg aria-hidden="true" viewBox="0 0 48 48"><rect x="10" y="6" width="10" height="36" rx="1.5"/><rect x="28" y="6" width="10" height="36" rx="1.5"/></svg>';
   button.setAttribute('aria-label', 'Pause radar timeline');
   button.title = 'Pause';
   radarTimer = setInterval(() => showRadarFrame((Number(slider.value) + 1) % radarFrames.length), 850);
