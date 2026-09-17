@@ -54,6 +54,7 @@ function atmosphereFor(code) {
   return 'sunny';
 }
 
+const radarSiteZoom = 11;
 let radarFrames = [];
 let radarTimer = null;
 let radarRequest = null;
@@ -146,12 +147,12 @@ async function loadRadar(card) {
     radarTileHost = data.tile_host;
     const center = [number(data.latitude), number(data.longitude)];
     if (!radarMap) {
-      radarMap = L.map('radar-map', {zoomControl:true, attributionControl:true}).setView(center, 8);
+      radarMap = L.map('radar-map', {zoomControl:true, attributionControl:true}).setView(center, radarSiteZoom);
       L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom:19, attribution:'© OpenStreetMap contributors'
       }).addTo(radarMap);
     } else {
-      radarMap.setView(center, 8);
+      radarMap.setView(center, radarSiteZoom);
     }
     if (radarMarker) radarMap.removeLayer(radarMarker);
     radarMarker = L.circleMarker(center, {radius:7, color:'#fff', weight:3, fillColor:'#d70015', fillOpacity:1})
