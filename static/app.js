@@ -215,7 +215,6 @@ async function load() {
         </div>
         ${hourlyHtml(location.hourly_forecast)}
         ${forecastHtml(location.forecast)}
-        <div class="alert-driver"><i class="${esc(location.severity)}"></i><b>Forecast color driver</b><span>${esc(location.severity_reason)}</span></div>
         <div class="card-meta"><span><b>Source</b>${esc(location.source)}</span><span title="${esc(location.plus_code)}">${number(location.latitude).toFixed(3)}, ${number(location.longitude).toFixed(3)}</span></div>
       </article>`;
     }).join('');
