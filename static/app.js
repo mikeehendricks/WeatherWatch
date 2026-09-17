@@ -191,14 +191,37 @@ function bindForecastDays() {
       const panel = card?.querySelector('.hourly-panel');
       if (!location || !panel) return;
       const date = button.dataset.forecastDate;
+      const wasSelected = button.getAttribute('aria-pressed') === 'true';
+      const buttons = card.querySelectorAll('.forecast-day');
+      buttons.forEach(item => item.setAttribute('aria-pressed', 'false'));
+      clearTimeout(panel._closeTimer);
+
+      if (wasSelected) {
+        panel.classList.add('is-closing');
+        panel._closeTimer = setTimeout(() => {
+          panel.open = false;
+          panel.classList.remove('is-closing');
+          panel.querySelector('.hourly-title').textContent = 'Next 24 hours';
+        }, 180);
+        return;
+      }
+
       const hours = (location.hourly_forecast || []).filter(hour => String(hour.time).startsWith(date));
-      card.querySelectorAll('.forecast-day').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+      button.setAttribute('aria-pressed', 'true');
+      button.classList.remove('day-selected');
+      void button.offsetWidth;
+      button.classList.add('day-selected');
       const label = button.querySelector(':scope > span')?.textContent || date;
       panel.querySelector('.hourly-title').textContent = `${label} hourly forecast`;
-      panel.querySelector('.hourly-scroll').innerHTML = hours.length
+      const hourlyScroll = panel.querySelector('.hourly-scroll');
+      hourlyScroll.innerHTML = hours.length
         ? hourlyItemsHtml(hours, date === String(location.current?.time || '').slice(0, 10))
         : '<p class="hourly-empty">Hourly forecast is unavailable for this day.</p>';
+      panel.classList.remove('is-closing');
       panel.open = true;
+      hourlyScroll.classList.remove('hourly-enter');
+      void hourlyScroll.offsetWidth;
+      hourlyScroll.classList.add('hourly-enter');
       panel.scrollIntoView({behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block:'nearest'});
     });
   });
