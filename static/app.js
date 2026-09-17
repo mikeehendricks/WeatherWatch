@@ -54,7 +54,7 @@ function atmosphereFor(code) {
   return 'sunny';
 }
 
-const radarSiteZoom = 13;
+const radarSiteZoom = 17;
 let radarFrames = [];
 let radarTimer = null;
 let radarRequest = null;

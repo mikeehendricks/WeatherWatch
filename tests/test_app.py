@@ -32,7 +32,7 @@ def test_home_and_seed_data(tmp_path, monkeypatch):
     javascript = client.get('/static/app.js').get_data(as_text=True)
     assert "if (wasSelected)" in javascript
     assert "panel.open = false" in javascript
-    assert "const radarSiteZoom = 13" in javascript
+    assert "const radarSiteZoom = 17" in javascript
     assert ".setView(center, radarSiteZoom)" in javascript
     assert b"Select a site to reflect its weather" in response.data
     assert b"Checking radar" in response.data
