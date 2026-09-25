@@ -16,6 +16,7 @@ from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 from zoneinfo import ZoneInfo
+from concurrent.futures import ThreadPoolExecutor
 import re
 
 from flask import Flask, Response, flash, jsonify, redirect, render_template, request, session, url_for
@@ -53,6 +54,8 @@ RADAR_CACHE = {"expires": 0.0, "host": "", "frames": []}
 RADAR_CACHE_LOCK = threading.Lock()
 HOURLY_DAY_CACHE = {}
 HOURLY_DAY_CACHE_LOCK = threading.Lock()
+METNO_CACHE = {}
+METNO_CACHE_LOCK = threading.Lock()
 VISITOR_CLEANUP_LOCK = threading.Lock()
 VISITOR_CLEANUP = {"next": 0.0}
 VISITOR_LOOKUPS = set()
@@ -389,6 +392,118 @@ def locations_cache_key(locations):
         for item in locations
     )
 
+def metno_weather_code(symbol):
+    symbol = str(symbol or "").split("_")[0]
+    if "thunder" in symbol: return 95
+    if "heavyrainshowers" in symbol: return 82
+    if "rainshowers" in symbol: return 81
+    if "lightrainshowers" in symbol: return 80
+    if "heavyrain" in symbol: return 65
+    if "lightrain" in symbol: return 61
+    if "rain" in symbol or "sleet" in symbol: return 63
+    if "snow" in symbol: return 71
+    if "fog" in symbol: return 45
+    if "cloudy" == symbol: return 3
+    if "partlycloudy" in symbol: return 2
+    if "fair" in symbol: return 1
+    return 0
+
+
+def fetch_metno(latitude, longitude):
+    key = (round(float(latitude), 4), round(float(longitude), 4))
+    now = time.monotonic()
+    with METNO_CACHE_LOCK:
+        cached = METNO_CACHE.get(key)
+        if cached and cached[0] > now:
+            return cached[1]
+    query = urllib.parse.urlencode({"lat": key[0], "lon": key[1]})
+    user_agent = os.getenv(
+        "METNO_USER_AGENT",
+        f"WeatherWatch/{APP_VERSION} https://weatherwatch.dreampixelmedia.uk",
+    )
+    req = urllib.request.Request(
+        "https://api.met.no/weatherapi/locationforecast/2.0/complete?" + query,
+        headers={"User-Agent": user_agent, "Accept": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=15) as response:
+        payload = json.load(response)
+    if not isinstance(payload.get("properties", {}).get("timeseries"), list):
+        raise ValueError("MET Norway returned an invalid forecast")
+    with METNO_CACHE_LOCK:
+        METNO_CACHE[key] = (now + 900, payload)
+    return payload
+
+
+def apparent_temperature_c(temperature, humidity):
+    if temperature < 27 or humidity < 40:
+        return temperature
+    fahrenheit = temperature * 9 / 5 + 32
+    heat_index = (-42.379 + 2.04901523 * fahrenheit + 10.14333127 * humidity
+                  - 0.22475541 * fahrenheit * humidity - 0.00683783 * fahrenheit ** 2
+                  - 0.05481717 * humidity ** 2 + 0.00122874 * fahrenheit ** 2 * humidity
+                  + 0.00085282 * fahrenheit * humidity ** 2
+                  - 0.00000199 * fahrenheit ** 2 * humidity ** 2)
+    return (heat_index - 32) * 5 / 9
+
+
+def normalize_metno(payload):
+    rows = []
+    for item in payload.get("properties", {}).get("timeseries", []):
+        try:
+            instant = item["data"]["instant"]["details"]
+            next_hour = (item["data"].get("next_1_hours") or item["data"].get("next_6_hours")
+                         or item["data"].get("next_12_hours") or {})
+            details = next_hour.get("details", {})
+            symbol = next_hour.get("summary", {}).get("symbol_code", "")
+            stamp = datetime.fromisoformat(item["time"].replace("Z", "+00:00"))
+            local = stamp.astimezone(ZoneInfo("Asia/Manila"))
+            rows.append({
+                "time": local.strftime("%Y-%m-%dT%H:00"), "local": local,
+                "temperature": float(instant.get("air_temperature", 0) or 0),
+                "humidity": float(instant.get("relative_humidity", 0) or 0),
+                "apparent_temperature": float(instant.get("apparent_air_temperature") or apparent_temperature_c(
+                    float(instant.get("air_temperature", 0) or 0),
+                    float(instant.get("relative_humidity", 0) or 0),
+                )),
+                "weather_code": metno_weather_code(symbol),
+                "precipitation": float(details.get("precipitation_amount", 0) or 0),
+                "precipitation_probability": float(details.get("probability_of_precipitation", 0) or 0),
+                "wind_speed": float(instant.get("wind_speed", 0) or 0) * 3.6,
+                "wind_gust": float(instant.get("wind_speed_of_gust", instant.get("wind_speed", 0)) or 0) * 3.6,
+            })
+        except (KeyError, TypeError, ValueError):
+            continue
+    if not rows:
+        raise ValueError("MET Norway returned no usable forecast hours")
+    now_local = datetime.now(ZoneInfo("Asia/Manila"))
+    future = [row for row in rows if row["local"] >= now_local.replace(minute=0, second=0, microsecond=0)] or rows
+    current_row = future[0]
+    current = {
+        "time": current_row["time"], "temperature_2m": current_row["temperature"],
+        "apparent_temperature": current_row["apparent_temperature"],
+        "relative_humidity_2m": current_row["humidity"],
+        "weather_code": current_row["weather_code"], "wind_speed_10m": current_row["wind_speed"],
+        "wind_gusts_10m": current_row["wind_gust"],
+    }
+    grouped = {}
+    for row in rows:
+        grouped.setdefault(row["local"].date().isoformat(), []).append(row)
+    daily = {key: [] for key in ("time", "weather_code", "temperature_2m_max", "temperature_2m_min", "precipitation_sum", "wind_gusts_10m_max")}
+    for date, day_rows in list(grouped.items())[:5]:
+        representative = min(day_rows, key=lambda row: abs(row["local"].hour - 12))
+        daily["time"].append(date)
+        daily["weather_code"].append(representative["weather_code"])
+        daily["temperature_2m_max"].append(max(row["temperature"] for row in day_rows))
+        daily["temperature_2m_min"].append(min(row["temperature"] for row in day_rows))
+        daily["precipitation_sum"].append(sum(row["precipitation"] for row in day_rows))
+        daily["wind_gusts_10m_max"].append(max(row["wind_gust"] for row in day_rows))
+    hourly = {key: [row[key] for row in future] for key in ("time", "temperature", "apparent_temperature", "weather_code", "precipitation_probability", "precipitation", "wind_speed", "wind_gust")}
+    hourly["temperature_2m"] = hourly.pop("temperature")
+    hourly["wind_speed_10m"] = hourly.pop("wind_speed")
+    hourly["wind_gusts_10m"] = hourly.pop("wind_gust")
+    return {"current": current, "daily": daily, "hourly": hourly}
+
+
 @app.get("/api/weather")
 def weather():
     # Read locations before consulting the process-local forecast cache so edits
@@ -413,28 +528,15 @@ def weather():
     if not locations:
         payload = {"locations": [], "updated_at": datetime.now(timezone.utc).isoformat()}
         with WEATHER_CACHE_LOCK:
-            WEATHER_CACHE.update(payload=payload, expires=now + 300, location_key=location_key)
+            WEATHER_CACHE.update(payload=payload, expires=now + 900, location_key=location_key)
         return jsonify(payload)
 
-    params = urllib.parse.urlencode({
-        "latitude": ",".join(str(x["latitude"]) for x in locations),
-        "longitude": ",".join(str(x["longitude"]) for x in locations),
-        "models": "ecmwf_ifs",
-        "current": "temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_gusts_10m",
-        "hourly": "temperature_2m,apparent_temperature,weather_code,precipitation_probability,precipitation,wind_speed_10m,wind_gusts_10m",
-        "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_gusts_10m_max",
-        "forecast_days": 5, "timezone": "Asia/Manila", "wind_speed_unit": "kmh"
-    })
     try:
-        request_to_provider = urllib.request.Request(
-            "https://api.open-meteo.com/v1/forecast?" + params,
-            headers={"User-Agent": f"WeatherWatch/{APP_VERSION}"},
-        )
-        with urllib.request.urlopen(request_to_provider, timeout=15) as response:
-            provider_payload = json.load(response)
-        forecasts = provider_payload if isinstance(provider_payload, list) else [provider_payload]
-        if len(forecasts) != len(locations):
-            raise ValueError("ECMWF returned an incomplete location set")
+        with ThreadPoolExecutor(max_workers=min(4, len(locations))) as executor:
+            provider_payloads = list(executor.map(
+                lambda loc: fetch_metno(loc["latitude"], loc["longitude"]), locations
+            ))
+        forecasts = [normalize_metno(payload) for payload in provider_payloads]
 
         result = []
         for loc, model_forecast in zip(locations, forecasts):
@@ -482,23 +584,23 @@ def weather():
                 **loc, "current": current, "rain": first["rain"], "gust": first["gust"],
                 "severity": first["severity"], "severity_reason": severity_reason, "forecast": days,
                 "next_hour_rain": next_hour_rain, "hourly_forecast": hourly_forecast[:24],
-                "source": "ECMWF IFS HRES 9 km", "selection": "Direct ECMWF model",
+                "source": "MET Norway Locationforecast", "selection": "MET Norway global forecast",
             })
         payload = {
             "locations": result, "updated_at": datetime.now(timezone.utc).isoformat(),
-            "method": "ECMWF IFS HRES 9 km",
+            "method": "MET Norway Locationforecast 2.0",
             "matrix_updated_at": thresholds["updated_at"],
         }
         with WEATHER_CACHE_LOCK:
-            WEATHER_CACHE.update(payload=payload, expires=time.monotonic() + 300, location_key=location_key)
+            WEATHER_CACHE.update(payload=payload, expires=time.monotonic() + 900, location_key=location_key)
         return jsonify(payload)
     except Exception as exc:
-        app.logger.warning("ECMWF provider error: %s", exc)
+        app.logger.warning("MET Norway provider error: %s", exc)
         with WEATHER_CACHE_LOCK:
             stale = WEATHER_CACHE["payload"] if WEATHER_CACHE["location_key"] == location_key else None
         if stale is not None:
             return jsonify({**stale, "stale": True})
-        return jsonify({"error": "ECMWF weather data is temporarily unavailable."}), 503
+        return jsonify({"error": "MET Norway weather data is temporarily unavailable."}), 503
 
 
 @app.get("/api/hourly/<int:location_id>")
@@ -521,21 +623,13 @@ def hourly_day(location_id):
         cached = HOURLY_DAY_CACHE.get(cache_key)
         if cached and cached[0] > now:
             return jsonify({"date": requested, "hours": cached[1]})
-    params = urllib.parse.urlencode({
-        "latitude": location["latitude"], "longitude": location["longitude"],
-        "models": "ecmwf_ifs", "timezone": "Asia/Manila", "wind_speed_unit": "kmh",
-        "start_date": requested, "end_date": requested,
-        "hourly": "temperature_2m,apparent_temperature,weather_code,precipitation_probability,precipitation,wind_speed_10m,wind_gusts_10m",
-    })
     try:
-        req = urllib.request.Request("https://api.open-meteo.com/v1/forecast?" + params,
-                                     headers={"User-Agent": f"WeatherWatch/{APP_VERSION}"})
-        with urllib.request.urlopen(req, timeout=15) as response:
-            payload = json.load(response)
-        hourly = payload.get("hourly", {})
-        times = hourly.get("time", [])
+        normalized = normalize_metno(fetch_metno(location["latitude"], location["longitude"]))
+        hourly = normalized["hourly"]
         hours = []
-        for i, stamp in enumerate(times[:24]):
+        for i, stamp in enumerate(hourly.get("time", [])):
+            if not str(stamp).startswith(requested):
+                continue
             def value(field, default=0):
                 values = hourly.get(field) or []
                 return values[i] if i < len(values) and values[i] is not None else default
@@ -548,12 +642,12 @@ def hourly_day(location_id):
                 "wind_gust": value("wind_gusts_10m"),
             })
         if not hours:
-            raise ValueError("ECMWF returned no hourly data")
+            raise ValueError("MET Norway returned no hourly data")
         with HOURLY_DAY_CACHE_LOCK:
             HOURLY_DAY_CACHE[cache_key] = (now + 900, hours)
         return jsonify({"date": requested, "hours": hours})
     except Exception as exc:
-        app.logger.warning("Hourly ECMWF provider error: %s", exc)
+        app.logger.warning("Hourly MET Norway provider error: %s", exc)
         return jsonify({"error": "Hourly forecast is temporarily unavailable."}), 503
 
 
@@ -569,7 +663,7 @@ def classification_details(rain, gust, thresholds=None):
         if rain_triggered or gust_triggered:
             drivers = []
             if rain_triggered: drivers.append(f"rain {rain:.1f} mm")
-            if gust_triggered: drivers.append(f"gust {gust:.0f} kph")
+            if gust_triggered: drivers.append(f"wind {gust:.0f} kph")
             return severity, " and ".join(drivers)
     return "normal", "below configured thresholds"
 

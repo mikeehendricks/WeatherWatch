@@ -5,11 +5,11 @@ A responsive operations dashboard for current conditions and multi-provider fore
 ## Features
 
 - Live dashboard with five-level severity color matrix
-- Direct ECMWF IFS HRES forecasts at native 9 km resolution
+- MET Norway Locationforecast 2.0 forecasts for exact site coordinates
 - Explicit modeled-versus-observed labeling throughout the dashboard
 - Lazy-rendered hourly forecasts and on-demand future-day retrieval: select a day to correlate it with that site's hourly weather, or select the same day again to collapse the panel
-- Five-day coordinate-level forecasts updated from ECMWF's six-hourly model runs
-- Interactive three-hour rain timeline with full-screen map, centered scrubber, large media-style SVG play/pause control, two hours of observed RainViewer radar, and the next-hour ECMWF precipitation forecast
+- Five-day coordinate-level forecasts with cached MET Norway updates
+- Interactive three-hour rain timeline with full-screen map, centered scrubber, large media-style SVG play/pause control, two hours of observed RainViewer radar, and the next-hour MET Norway precipitation forecast
 - Five-day forecast for every monitored site
 - Vivid Philippine sky-and-island welcome scene before selection, plus clickable site cards with distinct cinematic scenes for sunny, partly cloudy, overcast, drizzle, rain, showers, fog, and thunderstorms
 - 11 preloaded locations from the supplied list
@@ -30,25 +30,25 @@ A responsive operations dashboard for current conditions and multi-provider fore
 
 ## Severity logic
 
-The highest category triggered by today's forecast precipitation or maximum wind gust is used:
+The highest category triggered by today's forecast precipitation or maximum sustained wind is used:
 
 | Level | Rule |
 |---|---|
-| Normal | Dry and gust below 40 kph |
-| WeatherWatch | Rain 1–29 mm or gust 40–74 kph |
-| Moderate | Rain 30–49 mm or gust 75–99 kph |
-| Heavy / Strong | Rain 50–100 mm or gust 100–130 kph |
-| Extreme | Rain >100 mm or gust >130 kph |
+| Normal | Dry and wind below 40 kph |
+| WeatherWatch | Rain 1–29 mm or wind 40–74 kph |
+| Moderate | Rain 30–49 mm or wind 75–99 kph |
+| Heavy / Strong | Rain 50–100 mm or wind 100–130 kph |
+| Extreme | Rain >100 mm or wind >130 kph |
 
-The initial values follow the supplied matrix, with 0.1 mm rain / 40 kph gust as the WeatherWatch floor. Administrators can recalibrate all rain and gust thresholds from `/admin`; values are validated as strictly increasing and forecast colors refresh immediately across Gunicorn workers and CDN/browser caches. Every site card identifies the rain and/or gust value currently driving its color.
+The initial values follow the supplied matrix, with 0.1 mm rain / 40 kph sustained wind as the WeatherWatch floor. Administrators can recalibrate all rain and wind thresholds from `/admin`; values are validated as strictly increasing and forecast colors refresh immediately across Gunicorn workers and CDN/browser caches. Every site card identifies the rain and/or wind value currently driving its color.
 
 ## Weather source
 
-WeatherWatch uses the ECMWF Integrated Forecasting System High Resolution Forecast (IFS HRES) at its native 9 km global resolution. Data is requested by exact site coordinates through Open-Meteo's ECMWF delivery API using the explicit `ecmwf_ifs` model selector; Open-Meteo is the transport/API layer, not an additional forecast vote. Results are cached for five minutes, and the last matching-location result remains available during short upstream interruptions. Values are numerical-model forecasts rather than on-site instrument observations.
+WeatherWatch uses MET Norway's global Locationforecast 2.0 service at each configured site's exact coordinates. Requests identify WeatherWatch with a descriptive User-Agent and are cached for 15 minutes to follow MET Norway's fair-use expectations. The last matching-location result remains available during short upstream interruptions. Values are gridded model forecasts rather than on-site instrument observations. MET Norway data is available under its documented Creative Commons terms; retain visible source attribution.
 
 ## Rain timeline
 
-After a site is selected, the dashboard centers an interactive OpenStreetMap on its exact coordinates, overlays RainViewer's available two-hour observed-radar history in 10-minute frames, and shows the next hour's ECMWF precipitation forecast, forming a clearly labeled three-hour rain timeline. The map opens at close facility-level zoom (level 14), supports pan and zoom, marks the selected facility, displays a rain-intensity legend, and inspects loaded radar-tile transparency to distinguish observed precipitation from a valid clear radar frame or unavailable coverage. Radar coverage can vary by location and provider availability. RainViewer attribution is displayed in the interface. Before production use, confirm that your deployment qualifies under RainViewer's current API terms; its public service is intended for personal, educational, and small-scale community use and has no availability SLA.
+After a site is selected, the dashboard centers an interactive OpenStreetMap on its exact coordinates, overlays RainViewer's available two-hour observed-radar history in 10-minute frames, and shows the next hour's MET Norway precipitation forecast, forming a clearly labeled three-hour rain timeline. The map opens at close facility-level zoom (level 14), supports pan and zoom, marks the selected facility, displays a rain-intensity legend, and inspects loaded radar-tile transparency to distinguish observed precipitation from a valid clear radar frame or unavailable coverage. Radar coverage can vary by location and provider availability. RainViewer attribution is displayed in the interface. Before production use, confirm that your deployment qualifies under RainViewer's current API terms; its public service is intended for personal, educational, and small-scale community use and has no availability SLA.
 
 ## One-command Ubuntu installation
 

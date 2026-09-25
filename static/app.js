@@ -11,7 +11,7 @@ function forecastHtml(days = []) {
       <span>${esc(dayName(day.date, index))}</span>
       <span class="forecast-symbol" aria-label="${esc(labels[day.weather_code] || 'Weather')}">${glyphs[day.weather_code] || '◌'}</span>
       <b>${Math.round(number(day.temperature_max))}° <small>${Math.round(number(day.temperature_min))}°</small></b>
-      <em title="ECMWF daily forecast rainfall total"><i class="${esc(day.severity)}"></i>${number(day.rain).toFixed(1)} mm</em><small class="forecast-caption">View hourly forecast</small>
+      <em title="MET Norway daily forecast rainfall total"><i class="${esc(day.severity)}"></i>${number(day.rain).toFixed(1)} mm</em><small class="forecast-caption">View hourly forecast</small>
     </button>`).join('')}</div>`;
 }
 
@@ -27,7 +27,7 @@ function hourlyItemsHtml(hours = [], markNow = false) {
       <small>Feels ${Math.round(number(hour.apparent_temperature))}°</small>
       <span class="hour-rain" title="Forecast precipitation probability and amount">☂ ${Math.round(number(hour.precipitation_probability))}%</span>
       <small>${number(hour.precipitation).toFixed(1)} mm</small>
-      <small title="Forecast wind gust">Gust ${Math.round(number(hour.wind_gust))} kph</small>
+      <small title="Forecast sustained wind speed">Wind ${Math.round(number(hour.wind_gust))} kph</small>
     </div>`;
   }).join('');
 }
@@ -35,7 +35,7 @@ function hourlyItemsHtml(hours = [], markNow = false) {
 function hourlyHtml(hours = []) {
   if (!hours.length) return '';
   return `<details class="hourly-panel">
-    <summary><span><b class="hourly-title">Next 24 hours</b><small>ECMWF hourly forecast · Philippine time</small></span><i aria-hidden="true">⌄</i></summary>
+    <summary><span><b class="hourly-title">Next 24 hours</b><small>MET Norway hourly forecast · Philippine time</small></span><i aria-hidden="true">⌄</i></summary>
     <div class="hourly-scroll" tabindex="0" aria-label="Scrollable 24-hour weather forecast"></div>
   </details>`;
 }
@@ -140,7 +140,7 @@ async function loadRadar(card) {
   placeholder.innerHTML = '<span aria-hidden="true">↻</span><b>Loading live radar…</b><small>Retrieving recent observations.</small>';
   button.disabled = true; slider.disabled = true;
   document.querySelector('#radar-title').textContent = `Rain near ${card.dataset.siteName}`;
-  document.querySelector('#radar-forecast').textContent = `Next hour · ${number(card.dataset.nextHourRain).toFixed(1)} mm ECMWF forecast`;
+  document.querySelector('#radar-forecast').textContent = `Next hour · ${number(card.dataset.nextHourRain).toFixed(1)} mm MET Norway forecast`;
   try {
     const response = await fetch(`/api/radar?location_id=${encodeURIComponent(card.dataset.locationId)}`, {signal:radarRequest.signal, cache:'no-store'});
     const data = await response.json();
@@ -178,7 +178,7 @@ function selectSite(card) {
   shell.dataset.selectedSite = card.dataset.siteName;
   const condition = labels[Number(card.dataset.weatherCode)] || 'current weather';
   const hint = document.querySelector('#scene-hint');
-  hint.textContent = `● ${card.dataset.siteName} · ECMWF modeled: ${condition}`;
+  hint.textContent = `● ${card.dataset.siteName} · MET Norway modeled: ${condition}`;
   loadRadar(card);
   card.scrollIntoView({behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block:'nearest'});
 }
@@ -293,10 +293,10 @@ async function load() {
           <span class="severity-chip"><i></i>${esc(caps[location.severity])}</span>
         </div>
         <div class="current-weather">
-          <div class="current-primary"><span class="weather-glyph" aria-hidden="true">${glyphs[code] || '◌'}</span><div><span class="model-kicker">ECMWF modeled now</span><strong>${Math.round(number(location.current.temperature_2m))}°</strong><span>${esc(labels[code] || 'Weather update')}</span><small>Modeled feels-like ${Math.round(number(location.current.apparent_temperature))}°</small></div></div>
+          <div class="current-primary"><span class="weather-glyph" aria-hidden="true">${glyphs[code] || '◌'}</span><div><span class="model-kicker">MET Norway modeled now</span><strong>${Math.round(number(location.current.temperature_2m))}°</strong><span>${esc(labels[code] || 'Weather update')}</span><small>Modeled feels-like ${Math.round(number(location.current.apparent_temperature))}°</small></div></div>
           <div class="current-metrics">
             <div><span>Forecast rain today</span><b>${number(location.rain).toFixed(1)} <small>mm</small></b></div>
-            <div><span>Max gust</span><b>${Math.round(number(location.gust))} <small>kph</small></b></div>
+            <div><span>Max wind</span><b>${Math.round(number(location.gust))} <small>kph</small></b></div>
           </div>
         </div>
         ${hourlyHtml(location.hourly_forecast)}

@@ -18,10 +18,10 @@ def test_hourly_day_is_loaded_on_demand_and_cached(tmp_path, monkeypatch):
     monkeypatch.setattr(module.urllib.request, 'urlopen', fake_urlopen)
     response = client.get(f'/api/hourly/1?date={requested}')
     assert response.status_code == 200
-    assert len(response.get_json()['hours']) == 24
+    assert 1 <= len(response.get_json()['hours']) <= 24
     query = parse_qs(urlsplit(calls[0]).query)
-    assert query['start_date'] == [requested]
-    assert query['end_date'] == [requested]
+    assert urlsplit(calls[0]).netloc == 'api.met.no'
+    assert 'lat' in query and 'lon' in query
     client.get(f'/api/hourly/1?date={requested}')
     assert len(calls) == 1
 

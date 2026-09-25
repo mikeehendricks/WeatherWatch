@@ -11,7 +11,7 @@
     <div>
       <p class="section-label">Operations overview</p>
       <h1>Weather at every site.</h1>
-      <p class="overview-copy">Modeled current conditions, an hourly outlook, and a five-day ECMWF IFS HRES forecast for {{ locations|length }} operational locations.</p><p class="scene-hint" id="scene-hint"><span aria-hidden="true">☝︎</span> Select a site to reflect its weather across the dashboard.</p>
+      <p class="overview-copy">Modeled current conditions, an hourly outlook, and a five-day MET Norway forecast for {{ locations|length }} operational locations.</p><p class="scene-hint" id="scene-hint"><span aria-hidden="true">☝︎</span> Select a site to reflect its weather across the dashboard.</p>
     </div>
     <div class="refresh-state" aria-live="polite"><span class="refresh-icon" aria-hidden="true">↻</span><div><b>Updates automatically</b><small id="updated">Loading weather…</small></div></div>
   </header>
@@ -21,10 +21,10 @@
       <div class="severity-items"><span><i class="normal"></i>Normal</span><span><i class="watch"></i>WeatherWatch</span><span><i class="moderate"></i>Moderate</span><span><i class="heavy"></i>Heavy / Strong</span><span><i class="extreme"></i>Extreme</span></div>
     </section>
     <section class="radar-panel" id="radar-panel" aria-labelledby="radar-title">
-      <div class="radar-copy"><p class="section-label">Rain timeline</p><h2 id="radar-title">Three-hour rain view</h2><p id="radar-description">Select a site to play the last two hours of observed radar and see its next-hour ECMWF rain forecast.</p><p class="radar-forecast" id="radar-forecast">Next-hour forecast will appear here.</p><a class="radar-credit" href="https://www.rainviewer.com/" target="_blank" rel="noopener noreferrer">Radar data by RainViewer</a></div>
+      <div class="radar-copy"><p class="section-label">Rain timeline</p><h2 id="radar-title">Three-hour rain view</h2><p id="radar-description">Select a site to play the last two hours of observed radar and see its next-hour MET Norway rain forecast.</p><p class="radar-forecast" id="radar-forecast">Next-hour forecast will appear here.</p><a class="radar-credit" href="https://www.rainviewer.com/" target="_blank" rel="noopener noreferrer">Radar data by RainViewer</a></div>
       <div class="radar-stage" id="radar-stage"><div id="radar-map" aria-label="Interactive map with observed rain radar"></div><button type="button" class="radar-fullscreen" id="radar-fullscreen" aria-label="Enter full screen map" title="Full screen"><span aria-hidden="true">⛶</span></button><div class="radar-status" id="radar-status" hidden><i></i><span>Checking radar…</span></div><div class="radar-controls"><button type="button" class="radar-play-icon" id="radar-play" disabled aria-label="Play radar timeline" title="Play"><svg aria-hidden="true" viewBox="0 0 48 48"><path d="M9 5.5v37L41 24 9 5.5z"/></svg></button><input id="radar-slider" type="range" min="0" max="0" value="0" disabled aria-label="Radar timeline"><time id="radar-time">Select a site</time></div><div class="radar-legend" hidden><span>Light</span><i></i><span>Heavy</span></div><div class="radar-placeholder"><span aria-hidden="true">◎</span><b>No site selected</b><small>Choose any weather card below.</small></div></div>
     </section>
-    <aside class="model-disclosure"><span aria-hidden="true">ℹ︎</span><p><b>Forecast, not an on-site observation.</b> “Modeled now” and daily rainfall represent an approximately 9 km ECMWF grid. Use the radar panel for recently observed precipitation echoes.</p></aside>
+    <aside class="model-disclosure"><span aria-hidden="true">ℹ︎</span><p><b>Forecast, not an on-site observation.</b> “Modeled now” and daily rainfall represent MET Norway’s gridded forecast, not a sensor at the facility. Use the radar panel for recently observed precipitation echoes.</p></aside>
     <div id="notice" class="notice" role="status" hidden></div>
     <section id="grid" class="weather-grid" aria-label="Site weather conditions" aria-live="polite">
       {% for location in locations %}
@@ -36,7 +36,7 @@
     </section>
     <section class="matrix" aria-labelledby="matrix-title">
       <div><p class="section-label">How alerts work</p><h2 id="matrix-title">Weather severity matrix</h2><p>Today’s highest rain or wind threshold determines each site’s color.</p></div>
-      <div class="matrix-levels"><span><i class="normal"></i><b>Normal</b><small>Below watch thresholds</small></span><span><i class="watch"></i><b>WeatherWatch</b><small>Rain ≥{{ severity.watch_rain|round(1) }} mm · Gusts ≥{{ severity.watch_gust|round(0)|int }}</small></span><span><i class="moderate"></i><b>Moderate</b><small>Rain ≥{{ severity.moderate_rain|round(1) }} mm · Gusts ≥{{ severity.moderate_gust|round(0)|int }}</small></span><span><i class="heavy"></i><b>Heavy / Strong</b><small>Rain ≥{{ severity.heavy_rain|round(1) }} mm · Gusts ≥{{ severity.heavy_gust|round(0)|int }}</small></span><span><i class="extreme"></i><b>Extreme</b><small>Rain &gt;{{ severity.extreme_rain|round(1) }} mm · Gusts &gt;{{ severity.extreme_gust|round(0)|int }}</small></span></div>
+      <div class="matrix-levels"><span><i class="normal"></i><b>Normal</b><small>Below watch thresholds</small></span><span><i class="watch"></i><b>WeatherWatch</b><small>Rain ≥{{ severity.watch_rain|round(1) }} mm · Wind ≥{{ severity.watch_gust|round(0)|int }}</small></span><span><i class="moderate"></i><b>Moderate</b><small>Rain ≥{{ severity.moderate_rain|round(1) }} mm · Wind ≥{{ severity.moderate_gust|round(0)|int }}</small></span><span><i class="heavy"></i><b>Heavy / Strong</b><small>Rain ≥{{ severity.heavy_rain|round(1) }} mm · Wind ≥{{ severity.heavy_gust|round(0)|int }}</small></span><span><i class="extreme"></i><b>Extreme</b><small>Rain &gt;{{ severity.extreme_rain|round(1) }} mm · Wind &gt;{{ severity.extreme_gust|round(0)|int }}</small></span></div>
     </section>
   </main>
   <footer><span>Made with ♡ by Mikee Hendricks. Licensed Under MIT</span><span>Version {{ app_version }}</span><small>Visitor IP and ISP information is retained for {{ retention_days }} days for operational analytics and security.</small></footer>

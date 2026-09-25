@@ -51,9 +51,7 @@ def test_weather_api_reclassifies_immediately_after_save(tmp_path, monkeypatch):
         def __enter__(self): return self
         def __exit__(self, *_): pass
         def read(self, *_):
-            with module.db() as conn:
-                count = conn.execute('SELECT COUNT(*) FROM locations').fetchone()[0]
-            return json.dumps([forecast_payload() for _ in range(count)]).encode()
+            return json.dumps(forecast_payload()).encode()
     monkeypatch.setattr(module.urllib.request, 'urlopen', lambda *args, **kwargs: Response())
     module.WEATHER_CACHE.update(payload=None, expires=0, location_key=None)
     assert client.get('/api/weather').get_json()['locations'][0]['severity'] == 'watch'
