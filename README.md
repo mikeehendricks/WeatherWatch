@@ -6,7 +6,7 @@ A responsive operations dashboard for current conditions and multi-provider fore
 
 - Live dashboard with five-level severity color matrix
 - MET Norway Locationforecast 2.0 forecasts for exact site coordinates
-- Explicit modeled-versus-observed labeling throughout the dashboard
+- Clear forecast-versus-observation disclosure without repetitive provider labels on every site card
 - Lazy-rendered hourly forecasts and on-demand future-day retrieval: select a day to correlate it with that site's hourly weather, or select the same day again to collapse the panel
 - Five-day coordinate-level forecasts with cached MET Norway updates
 - Interactive three-hour rain timeline with full-screen map, centered scrubber, large media-style SVG play/pause control, two hours of observed RainViewer radar, and the next-hour MET Norway precipitation forecast

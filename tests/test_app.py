@@ -32,6 +32,8 @@ def test_home_and_seed_data(tmp_path, monkeypatch):
     assert b"Modeled current conditions" in response.data
     assert b"hourly outlook" in response.data
     assert '.forecast-day{appearance:none;display:block' in css
+    assert '.model-kicker' not in css
+    assert 'MET Norway modeled now' not in client.get('/static/app.js').get_data(as_text=True)
     assert 'grid-template-columns:68px minmax(0,1fr) 68px' in css
     assert 'justify-self:center' in css
     assert '.radar-play-icon svg' in css

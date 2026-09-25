@@ -293,7 +293,7 @@ async function load() {
           <span class="severity-chip"><i></i>${esc(caps[location.severity])}</span>
         </div>
         <div class="current-weather">
-          <div class="current-primary"><span class="weather-glyph" aria-hidden="true">${glyphs[code] || '◌'}</span><div><span class="model-kicker">MET Norway modeled now</span><strong>${Math.round(number(location.current.temperature_2m))}°</strong><span>${esc(labels[code] || 'Weather update')}</span><small>Modeled feels-like ${Math.round(number(location.current.apparent_temperature))}°</small></div></div>
+          <div class="current-primary"><span class="weather-glyph" aria-hidden="true">${glyphs[code] || '◌'}</span><div><strong>${Math.round(number(location.current.temperature_2m))}°</strong><span>${esc(labels[code] || 'Weather update')}</span><small>Modeled feels-like ${Math.round(number(location.current.apparent_temperature))}°</small></div></div>
           <div class="current-metrics">
             <div><span>Forecast rain today</span><b>${number(location.rain).toFixed(1)} <small>mm</small></b></div>
             <div><span>Max wind</span><b>${Math.round(number(location.gust))} <small>kph</small></b></div>
